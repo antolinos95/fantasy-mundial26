@@ -158,10 +158,11 @@ if (playerCount > 0) {
       </h2>
             {firstPlayer && (
         <TeamPicker
-          teams={availableTeams}
-          leagueId={league.id}
-          playerId={currentPlayer?.player_id}
-        />
+  teams={availableTeams}
+  leagueId={league.id}
+  playerId={currentPlayer.player_id}
+  currentPlayerId={currentPlayer.player_id}
+/>
       )}
 <h2 className="mt-8 text-xl font-bold">
   Historial del Draft

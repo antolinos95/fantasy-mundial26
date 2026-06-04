@@ -23,17 +23,23 @@ export default function JoinPage() {
     }
 
     // Crear jugador
-    const { error: playerError } = await supabase
-      .from("players")
-      .insert({
-        league_id: league.id,
-        name,
-      });
+    const { data: player, error } = await supabase
+  .from("players")
+  .insert({
+    league_id: league.id,
+    name,
+  })
+  .select()
+  .single();
 
-    if (playerError) {
-      setMessage(playerError.message);
+    if (error) {
+      setMessage(error.message);
       return;
     }
+    localStorage.setItem(
+  "playerId",
+  player.id
+);
 
     setMessage("Te has unido a la liga correctamente");
   }
