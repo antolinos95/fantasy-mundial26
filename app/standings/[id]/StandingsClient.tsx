@@ -116,21 +116,18 @@ function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; pl
   const [topScorers, setTopScorers] = useState<(PlayerStat & { team_name?: string; flag?: string })[]>([])
 
   useEffect(() => {
-    supabase.from('player_stats_by_league')
-      .select('*, team:teams(name, flag_emoji)')
-      .eq('league_id', leagueId)
+    supabase.from('player_stats_global')
+      .select('*')
       .gt('goals', 0)
       .order('goals', { ascending: false })
       .limit(10)
       .then(({ data, error }) => {
-        if (error) { console.error('player_stats_by_league:', error.message); return }
+        if (error) { console.error('player_stats_global:', error.message); return }
         if (data) setTopScorers(data.map((d: any) => ({
           ...d,
           goals:     Number(d.goals)     ?? 0,
           own_goals: Number(d.own_goals) ?? 0,
           red_cards: Number(d.red_cards) ?? 0,
-          team_name: d.team?.name,
-          flag:      d.team?.flag_emoji,
         })))
       })
   }, [leagueId])
@@ -208,11 +205,10 @@ function TeamSquadExpand({ teamId, pickNumber, leagueId }: { teamId: string; pic
     Promise.all([
       supabase.from('squad_players').select('*')
         .eq('team_id', teamId).order('position').order('shirt_number'),
-      supabase.from('player_stats_by_league').select('*')
-        .eq('team_id', teamId).eq('league_id', leagueId),
+      supabase.from('player_stats_global').select('*').eq('team_id', teamId),
     ]).then(([squadRes, statsRes]) => {
       if (squadRes.error) console.error('squad_players:', squadRes.error.message)
-      if (statsRes.error) console.error('player_stats_by_league:', statsRes.error.message)
+      if (statsRes.error) console.error('player_stats_global:', statsRes.error.message)
       setSquad(squadRes.data ?? [])
       const map: Record<string, PlayerStat> = {}
       for (const s of (statsRes.data ?? [])) {
@@ -291,6 +287,7 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
 }) {
   const [viewingId, setViewingId] = useState<string | null>(null)
   const [expanded,  setExpanded]  = useState<string | null>(null)
+  const [sortBy,    setSortBy]    = useState<'alpha' | 'group'>('alpha')
 
   useEffect(() => { if (myId && !viewingId) setViewingId(myId) }, [myId])
 
@@ -298,8 +295,24 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
     acc[dt.player_id] ??= []; acc[dt.player_id].push(dt); return acc
   }, {})
 
-  const currentTeams   = viewingId ? (byPlayer[viewingId] ?? []) : []
-  const viewingPlayer  = players.find(p => p.id === viewingId)
+  const rawTeams     = viewingId ? (byPlayer[viewingId] ?? []) : []
+  const viewingPlayer = players.find(p => p.id === viewingId)
+
+  const currentTeams = [...rawTeams].sort((a, b) => {
+    if (sortBy === 'group') {
+      const gA = a.team?.group_name ?? '', gB = b.team?.group_name ?? ''
+      return gA.localeCompare(gB) || (a.team?.name ?? '').localeCompare(b.team?.name ?? '')
+    }
+    return (a.team?.name ?? '').localeCompare(b.team?.name ?? '')
+  })
+
+  // Para vista por grupo: agrupar con cabecera
+  const groupedTeams = sortBy === 'group'
+    ? currentTeams.reduce<Record<string, DraftedTeam[]>>((acc, dt) => {
+        const g = dt.team?.group_name ?? '?'
+        acc[g] ??= []; acc[g].push(dt); return acc
+      }, {})
+    : null
 
   return (
     <div className="space-y-4">
@@ -319,12 +332,50 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
 
       {/* Grid de equipos */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
-        <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-          {viewingPlayer?.name ?? '…'} · {currentTeams.length} selecciones
-        </p>
+        {/* Cabecera con ordenación */}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+            {viewingPlayer?.name ?? '…'} · {currentTeams.length} selecciones
+          </p>
+          <div className="flex gap-1">
+            {(['alpha', 'group'] as const).map(s => (
+              <button key={s} onClick={() => { setSortBy(s); setExpanded(null) }}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors
+                  ${sortBy === s
+                    ? 'bg-[var(--accent)] border-[var(--accent)] text-white'
+                    : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-white'}`}>
+                {s === 'alpha' ? 'A–Z' : 'Grupo'}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {currentTeams.length === 0
           ? <p className="text-center text-[var(--text-secondary)] py-4 text-sm">Sin selecciones</p>
           : <>
+              {/* Vista por grupo */}
+              {groupedTeams ? (
+                <div className="space-y-4">
+                  {Object.entries(groupedTeams).sort(([a],[b]) => a.localeCompare(b)).map(([group, teams]) => (
+                    <div key={group}>
+                      <p className="text-xs font-bold text-[var(--text-secondary)] mb-2">Grupo {group}</p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {teams.map(dt => (
+                          <button key={dt.id}
+                            onClick={() => setExpanded(e => e === dt.team_id ? null : dt.team_id)}
+                            className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all
+                              ${expanded === dt.team_id
+                                ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                                : 'border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50'}`}>
+                            <span className="text-3xl leading-none">{dt.team?.flag_emoji}</span>
+                            <span className="text-xs font-semibold leading-tight line-clamp-2 w-full text-center">{dt.team?.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {currentTeams.map(dt => (
                   <button key={dt.id}
@@ -338,6 +389,8 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
                   </button>
                 ))}
               </div>
+              )}
+              {/* Panel expandible (ambos modos) */}
               {expanded && (() => {
                 const dt = currentTeams.find(d => d.team_id === expanded)
                 return dt ? (
@@ -345,6 +398,7 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xl">{dt.team?.flag_emoji}</span>
                       <span className="font-bold">{dt.team?.name}</span>
+                      <span className="text-xs text-[var(--text-secondary)] ml-auto">Grupo {dt.team?.group_name} · Pick #{dt.pick_number}</span>
                     </div>
                     <TeamSquadExpand teamId={expanded} pickNumber={dt.pick_number} leagueId={leagueId} />
                   </div>
@@ -460,14 +514,14 @@ function MatchesTab({
 
   function canInteract(match: Match) {
     if (!myId || match.status !== 'scheduled') return false
-    return myTeamIds.includes(match.home_team_id) || myTeamIds.includes(match.away_team_id)
+    return myTeamIds.includes(match.home_team_id ?? '') || myTeamIds.includes(match.away_team_id ?? '')
   }
 
   const [visibleMy, setVisibleMy]       = useState(5)
   const [visibleOther, setVisibleOther] = useState(5)
 
-  const allMyMatches    = myId ? matches.filter(m => myTeamIds.includes(m.home_team_id) || myTeamIds.includes(m.away_team_id)) : []
-  const allOtherMatches = matches.filter(m => !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id))
+  const allMyMatches    = myId ? matches.filter(m => myTeamIds.includes(m.home_team_id ?? '') || myTeamIds.includes(m.away_team_id ?? '')) : []
+  const allOtherMatches = matches.filter(m => !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? ''))
   const myMatches    = allMyMatches.slice(0, visibleMy)
   const otherMatches = allOtherMatches.slice(0, visibleOther)
 
@@ -490,17 +544,17 @@ function MatchesTab({
                   <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
                     {/* Cabecera partido */}
                     <div className="flex items-center justify-between mb-2">
-                      <TeamBadge team={m.home_team} owner={ownerName(m.home_team_id)} />
+                      <TeamBadge team={m.home_team} owner={ownerName(m.home_team_id ?? '')} />
                       {m.status === 'finished'
                         ? <span className="font-black text-xl tabular-nums">{m.home_goals} - {m.away_goals}</span>
                         : <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
                       }
-                      <TeamBadge team={m.away_team} owner={ownerName(m.away_team_id)} right />
+                      <TeamBadge team={m.away_team} owner={ownerName(m.away_team_id ?? '')} right />
                     </div>
                     {m.match_date && (
                       <p className="text-xs text-center text-[var(--text-secondary)] mb-3">
                         {new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })}
-                        {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type] ?? m.match_type}
+                        {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
                       </p>
                     )}
 
@@ -643,8 +697,8 @@ function MatchesTab({
           <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">Otros partidos</h2>
           <div className="space-y-2">
             {otherMatches.map(m => {
-              const homeOwner = ownerName(m.home_team_id)
-              const awayOwner = ownerName(m.away_team_id)
+              const homeOwner = ownerName(m.home_team_id ?? '')
+              const awayOwner = ownerName(m.away_team_id ?? '')
               return (
                 <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -705,7 +759,7 @@ function MundialTab({ matches }: { matches: Match[] }) {
     for (const m of matches) {
       if (m.status !== 'finished' || m.home_goals === null || m.away_goals === null) continue
       if (m.match_type !== 'group') continue
-      const h = map[m.home_team_id], a = map[m.away_team_id]
+      const h = map[m.home_team_id ?? ''], a = map[m.away_team_id ?? '']
       if (!h || !a) continue
       const hg = m.home_goals, ag = m.away_goals
       h.p++; h.gf += hg; h.ga += ag
@@ -730,10 +784,21 @@ function MundialTab({ matches }: { matches: Match[] }) {
     return Object.entries(g).sort(([a], [b]) => a.localeCompare(b))
   }, [standings])
 
+  const knockoutMatches = matches.filter(m => m.match_type && m.match_type !== 'group')
+  const rounds: { key: string; label: string }[] = [
+    { key: 'r32',   label: 'Ronda de 32' },
+    { key: 'r16',   label: 'Ronda de 16' },
+    { key: 'qf',    label: 'Cuartos de final' },
+    { key: 'sf',    label: 'Semifinales' },
+    { key: 'third', label: 'Tercer puesto' },
+    { key: 'final', label: 'Final' },
+  ]
+
   if (!allTeams.length) return <p className="text-[var(--text-secondary)] text-sm">Cargando…</p>
 
   return (
     <div className="space-y-4">
+      {/* Grupos */}
       {groups.map(([groupName, rows]) => (
         <div key={groupName} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
           <div className="px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
@@ -773,7 +838,48 @@ function MundialTab({ matches }: { matches: Match[] }) {
           </table>
         </div>
       ))}
-      <p className="text-xs text-[var(--text-secondary)] text-center">● Clasificados a octavos (top 2 por grupo)</p>
+      <p className="text-xs text-[var(--text-secondary)] text-center">● Clasificados (top 2 por grupo)</p>
+
+      {/* Fase eliminatoria */}
+      {knockoutMatches.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex-1 h-px bg-[var(--border)]" />
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider whitespace-nowrap">Fase eliminatoria</p>
+            <div className="flex-1 h-px bg-[var(--border)]" />
+          </div>
+          {rounds.map(({ key, label }) => {
+            const roundMatches = knockoutMatches.filter(m => m.match_type === key)
+            if (!roundMatches.length) return null
+            return (
+              <div key={key} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
+                  <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">{label}</p>
+                </div>
+                <div className="divide-y divide-[var(--border)]">
+                  {roundMatches.map(m => {
+                    const homeLabel = m.home_team ? `${m.home_team.flag_emoji} ${m.home_team.name}` : (m.slot_home ?? 'TBD')
+                    const awayLabel = m.away_team ? `${m.away_team.flag_emoji} ${m.away_team.name}` : (m.slot_away ?? 'TBD')
+                    return (
+                      <div key={m.id} className="flex items-center gap-2 px-4 py-3">
+                        <span className={`flex-1 text-sm font-medium truncate text-right ${m.home_team ? '' : 'text-[var(--text-secondary)]'}`}>{homeLabel}</span>
+                        <span className="shrink-0 font-black tabular-nums text-sm w-16 text-center">
+                          {m.status === 'finished'
+                            ? `${m.home_goals} - ${m.away_goals}`
+                            : m.match_date
+                              ? new Date(m.match_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })
+                              : 'vs'}
+                        </span>
+                        <span className={`flex-1 text-sm font-medium truncate ${m.away_team ? '' : 'text-[var(--text-secondary)]'}`}>{awayLabel}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
@@ -792,6 +898,16 @@ function AdminTab({ league, matches, players, router }: {
   useEffect(() => {
     supabase.from('teams').select('*').order('name').then(({ data }) => { if (data) setAllTeams(data) })
   }, [])
+
+  async function loadKnockout() {
+    if (!confirm('¿Cargar el cuadro eliminatorio (32 partidos)? Necesita schema_v5.sql ejecutado.')) return
+    setLoadingMatches(true)
+    const { data, error } = await supabase.rpc('load_knockout_matches', { p_league_id: league.id })
+    if (error) alert(`Error: ${error.message}`)
+    else alert(`✅ ${data} partidos eliminatorios cargados`)
+    setLoadingMatches(false)
+    router.refresh()
+  }
 
   async function loadGroupStage() {
     if (!confirm('¿Cargar los 72 partidos de fase de grupos? Se añadirán a esta liga.')) return
@@ -842,11 +958,6 @@ function AdminTab({ league, matches, players, router }: {
 
   return (
     <div className="space-y-6">
-      {/* Cargar fase de grupos */}
-      <button onClick={loadGroupStage} disabled={loadingMatches}
-        className="w-full py-3 bg-[var(--green)] text-black font-black rounded-2xl disabled:opacity-50">
-        {loadingMatches ? 'Cargando…' : '⚽ Cargar 72 partidos de fase de grupos'}
-      </button>
 
       {/* Crear partido */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
@@ -862,7 +973,7 @@ function AdminTab({ league, matches, players, router }: {
             <option value="">Equipo visitante…</option>
             {allTeams.map(t => <option key={t.id} value={t.id}>{t.flag_emoji} {t.name}</option>)}
           </select>
-          <select value={matchType} onChange={e => setMatchType(e.target.value as Match['match_type'])}
+          <select value={matchType ?? 'group'} onChange={e => setMatchType(e.target.value as NonNullable<Match['match_type']>)}
             className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none">
             <option value="group">Fase de grupos</option>
             <option value="r16">Octavos de final</option>

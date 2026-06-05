@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, setPlayerId } from '../../../lib/supabase'
+import { supabase, setPlayerId, DEFAULT_PLAYER_IMG } from '../../../lib/supabase'
 import type { League, Player, Team, DraftOrder, DraftState, DraftedTeam, SquadPlayer } from '../../../types'
 
 export default function DraftClient({
@@ -309,8 +309,8 @@ function TeamPanel({ team, leagueId, canPick, onPick, onClose }: {
     Promise.all([
       supabase.from('squad_players').select('*')
         .eq('team_id', team.id).order('position').order('shirt_number'),
-      supabase.from('player_stats_by_league').select('squad_player_id,goals,own_goals,red_cards')
-        .eq('team_id', team.id).eq('league_id', leagueId),
+      supabase.from('player_stats_global').select('squad_player_id,goals,own_goals,red_cards')
+        .eq('team_id', team.id),
     ]).then(([squadRes, statsRes]) => {
       if (squadRes.error) setDbError(squadRes.error.message)
       setSquad(squadRes.data ?? [])

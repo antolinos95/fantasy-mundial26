@@ -55,13 +55,15 @@ export interface DraftedTeam {
 export interface Match {
   id: string
   league_id: string
-  home_team_id: string
-  away_team_id: string
+  home_team_id: string | null
+  away_team_id: string | null
   match_date: string | null
   status: 'scheduled' | 'finished'
-  match_type: 'group' | 'r16' | 'qf' | 'sf' | 'third_place' | 'final'
+  match_type: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'third' | 'final' | null
   home_goals: number | null
   away_goals: number | null
+  slot_home: string | null
+  slot_away: string | null
   home_team?: Team
   away_team?: Team
 }

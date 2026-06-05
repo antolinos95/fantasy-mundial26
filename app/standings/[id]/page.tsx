@@ -16,7 +16,7 @@ export default async function StandingsPage({ params }: { params: Promise<{ id: 
     supabase.from('players').select('*').eq('league_id', id),
     supabase.from('scores').select('*, player:players(*)').eq('league_id', id).order('points', { ascending: false }),
     supabase.from('drafted_teams').select('*, team:teams(*), player:players(*)').eq('league_id', id).order('pick_number'),
-    supabase.from('matches').select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)').eq('league_id', id).order('match_date'),
+    supabase.from('matches').select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)').or(`league_id.is.null,league_id.eq.${id}`).order('match_date'),
   ])
 
   if (!league) notFound()

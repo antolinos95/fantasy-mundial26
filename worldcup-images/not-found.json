@@ -1,0 +1,52 @@
+[
+  {
+    "id": "9703044c-52a3-4bca-8186-8d819ef3f049",
+    "name": "Ali Ahmed",
+    "team_name": "Canadá"
+  },
+  {
+    "id": "daf3289d-fe81-4ce2-8ac0-3fc495628c43",
+    "name": "Mohamed Manai",
+    "team_name": "Qatar"
+  },
+  {
+    "id": "48a94e11-f764-4967-876d-3756c3642197",
+    "name": "Bilal El Khannouss",
+    "team_name": "Marruecos"
+  },
+  {
+    "id": "98b29349-3efb-4f45-a346-fb2fa5f8a625",
+    "name": "Andy Robertson",
+    "team_name": "Escocia"
+  },
+  {
+    "id": "cfd5029f-8728-4bc5-abac-11466305ecaa",
+    "name": "Kevin Rodríguez",
+    "team_name": "Ecuador"
+  },
+  {
+    "id": "65cd5aa1-81c5-4dd7-b53f-50ce669e285e",
+    "name": "Mouhib Chamakh",
+    "team_name": "Túnez"
+  },
+  {
+    "id": "c5010fe3-0fa7-421d-a542-dddad2f8b74d",
+    "name": "Shahriyar Moghanlou",
+    "team_name": "Irán"
+  },
+  {
+    "id": "0f5cccba-8d6e-4ebe-94bc-66df192f90b8",
+    "name": "Ryan Mendes",
+    "team_name": "Cabo Verde"
+  },
+  {
+    "id": "233dc7e5-90d6-4af0-9b87-edc2fecf788d",
+    "name": "Akam Hashim",
+    "team_name": "Irak"
+  },
+  {
+    "id": "e962f28e-b473-41a4-b9ff-dd78cc5df834",
+    "name": "Ali Yousif",
+    "team_name": "Irak"
+  }
+]
