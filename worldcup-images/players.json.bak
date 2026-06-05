@@ -1,0 +1,237 @@
+[
+  {
+    "id": "395c12ca-3a32-41a1-ab74-02ff93d7a749",
+    "name": "Kevin Rodríguez",
+    "team_name": "Ecuador"
+  },
+  {
+    "id": "1cf2e9d2-e3b6-4c88-b78c-9470b27ef844",
+    "name": "Andrés Gómez",
+    "team_name": "Colombia"
+  },
+  {
+    "id": "fae5a124-508d-4b63-9930-793cf0748b94",
+    "name": "Ryan Mendes",
+    "team_name": "Cabo Verde"
+  },
+  {
+    "id": "258a8a65-632e-4788-a821-ba01ab1b7a6f",
+    "name": "Mouhib Chamakh",
+    "team_name": "Túnez"
+  },
+  {
+    "id": "fdf24081-795b-4a2b-9c6c-281b202d5df9",
+    "name": "Ali Ahmed",
+    "team_name": "Canadá"
+  },
+  {
+    "id": "c5a70a4b-35d2-4b36-94ba-c5555ef94587",
+    "name": "Jorge Gutiérrez",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "75a3734c-8c94-4ca1-814a-904a1b953b76",
+    "name": "Ismael Díaz",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "2186170c-a11e-48d8-b48a-16d2c65f5997",
+    "name": "Yoel Bárcenas",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "c9814008-40c3-4a84-8170-163da474d932",
+    "name": "César Samudio",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "582d729a-9d14-4efc-acf8-ce36e26f8497",
+    "name": "Jiovany Ramos",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "8c0527a8-eff1-4cc6-8d05-01dde5a163f0",
+    "name": "Carlos Harvey",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "d06a2981-ad33-46bc-b980-70be0e86be16",
+    "name": "Eric Davis",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "7b68d98d-0f74-418c-94d3-8334c368b60f",
+    "name": "Andrés Andrade",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "79293143-6e4c-4d72-ace9-aba7a0021b0b",
+    "name": "José Fajardo",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "0f941783-6aa8-40ff-b468-14b8b499fbd7",
+    "name": "Cecilio Waterman",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "fc0d6f4b-a6e7-4b21-ac26-855050ca5c68",
+    "name": "Alberto Quintero",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "a416bdd6-6258-4778-b351-73dc498417ce",
+    "name": "Aníbal Godoy",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "dbbe1da2-18c5-4bc6-99bc-c47778fb68ac",
+    "name": "César Yanis",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "1b86e844-318a-40e8-85ed-742db871e1b5",
+    "name": "Orlando Mosquera",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "4e5e664a-baf0-4e95-a4b9-0b4b57e16b48",
+    "name": "Michael Amir Murillo",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "24c382ad-3481-450c-bed8-1ad7b9bf590d",
+    "name": "Azarias Londoño",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "0be680f4-c4f7-4b44-8d49-b50fb84f9b95",
+    "name": "Roderick Miller",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "8ab25237-84e3-45e1-95d8-1c1cd1052ebd",
+    "name": "Luis Mejía",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "4532ef2b-57c9-4f02-8599-1eb7b4941ee3",
+    "name": "César Blackman",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "7ff21dc3-e5a3-4d2c-900a-47e432ed1dd6",
+    "name": "José Córdoba",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "a4d7484b-98cf-4e39-8692-bd4a1e75ae56",
+    "name": "Fidel Escobar",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "f24d0c51-093d-48e4-b682-8d23815f7e55",
+    "name": "Edgardo Fariña",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "7b65808c-fe73-42e9-b765-d3ebc2cb491c",
+    "name": "Cristian Martínez",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "6baaf0d5-d874-481d-ad6c-9b5953c24934",
+    "name": "José Luis Rodríguez",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "62088d23-be2f-4a99-98b2-2dd0710f6828",
+    "name": "Adalberto Carrasquilla",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "b70212ea-22f2-46fa-a4bf-2a0398123207",
+    "name": "Tomás Rodríguez",
+    "team_name": "Panamá"
+  },
+  {
+    "id": "d3eccaca-3c65-4ab5-a9b8-edd85a98eb56",
+    "name": "Kamaldeen Sulemana",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "3492689a-a808-4c22-872c-6b6ba9d88b0a",
+    "name": "Marvin Senaya",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "54775c46-9226-4cd3-beef-4acea4c4ed39",
+    "name": "Abdul Rahman Baba",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "f649ed4e-6feb-4208-83ee-ce909b7a16b2",
+    "name": "Kojo Peprah Oppong",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "cb3087fe-0787-411a-bdfa-abf41a88bc02",
+    "name": "Derrick Luckassen",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "df7d75ce-e290-42e5-9a27-5407007b8d1e",
+    "name": "Prince Kwabena Adu",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "c1f2d05a-b2ec-45a7-b635-75ce9edf8ea0",
+    "name": "Ernest Nuamah",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "fffca9dc-bcb4-4eec-bfc3-f5bd48e857d2",
+    "name": "Christopher Bonsu Baah",
+    "team_name": "Ghana"
+  },
+  {
+    "id": "638a8b95-6d8f-4b98-bae7-8afd636ec8ed",
+    "name": "Akam Hashim",
+    "team_name": "Irak"
+  },
+  {
+    "id": "b784be8d-6f3d-45af-98ff-0c766beaaf74",
+    "name": "Ali Yousif",
+    "team_name": "Irak"
+  },
+  {
+    "id": "51b5a0c7-5733-4735-af4a-c8e161a06354",
+    "name": "Bilal El Khannouss",
+    "team_name": "Marruecos"
+  },
+  {
+    "id": "bcb7a0b7-ba78-4004-8d19-c9821ded2149",
+    "name": "Shahriyar Moghanlou",
+    "team_name": "Irán"
+  },
+  {
+    "id": "3de4c80d-a9de-417b-87aa-b81e31fb5782",
+    "name": "Mohamed Manai",
+    "team_name": "Qatar"
+  },
+  {
+    "id": "30a3a3d2-53cf-4754-bb0b-2c7c45c0ceb1",
+    "name": "Ihsan Haddad",
+    "team_name": "Jordania"
+  },
+  {
+    "id": "01911cae-42e2-4e10-92a0-b552c15f26d9",
+    "name": "Salim Obaid",
+    "team_name": "Jordania"
+  },
+  {
+    "id": "0762e967-c008-48c7-adba-5994f0c651ae",
+    "name": "Andy Robertson",
+    "team_name": "Escocia"
+  }
+]

@@ -21,6 +21,7 @@ export interface Team {
   name: string
   flag_emoji: string
   group_name: string | null
+  fifa_code?: string | null
 }
 
 export interface DraftOrder {

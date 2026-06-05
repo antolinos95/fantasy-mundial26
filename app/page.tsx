@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, setPlayerId, setLeagueId } from '../lib/supabase'
 import type { Player, League } from '../types'
+import RulesModal from '../components/RulesModal'
 
 type PlayerWithLeague = Player & { leagues: League }
 
@@ -25,14 +26,20 @@ export default function Home() {
   const [joining, setJoining] = useState(false)
 
   const [error, setError] = useState('')
+  const [showRules, setShowRules] = useState(false)
 
   useEffect(() => {
     checkUser()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session)
-      if (session) loadUserLeagues(session.user.id)
-      else { setUserLeagues([]); setLoadingLeagues(false) }
+      if (session) {
+        // ⚠️ Deferir: llamar a supabase.from() dentro del callback de
+        // onAuthStateChange provoca deadlock en supabase-js v2
+        setTimeout(() => loadUserLeagues(session.user.id), 0)
+      } else {
+        setUserLeagues([]); setLoadingLeagues(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -45,12 +52,15 @@ export default function Home() {
   }
 
   async function loadUserLeagues(userId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('players')
-      .select('*, leagues(*)')
+      .select('*, leagues:leagues!players_league_id_fkey(*)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-    setUserLeagues((data as PlayerWithLeague[]) ?? [])
+    if (error) console.error('loadUserLeagues:', error.message)
+    // Filtrar filas huérfanas (sin liga asociada)
+    const valid = (data as PlayerWithLeague[] ?? []).filter(e => e.leagues)
+    setUserLeagues(valid)
     setLoadingLeagues(false)
   }
 
@@ -62,6 +72,12 @@ export default function Home() {
     if (league.status === 'waiting') router.push(`/lobby/${league.id}`)
     else if (league.status === 'drafting') router.push(`/draft/${league.id}`)
     else router.push(`/standings/${league.id}`)
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    setIsLoggedIn(false)
+    setUserLeagues([])
   }
 
   async function loginWithGoogle() {
@@ -164,7 +180,13 @@ export default function Home() {
           IT&apos;S FÚTBOL,<br className="sm:hidden" /> NOT SOCCER
         </h1>
         <p className="mt-2 text-[var(--text-secondary)]">Fantasy Mundial 2026</p>
+        <button onClick={() => setShowRules(true)}
+          className="mt-4 inline-flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl px-4 py-2 text-sm font-semibold transition-colors">
+          📖 Ver normas
+        </button>
       </div>
+
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {/* Card */}
       <div className="w-full max-w-md bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-6">
@@ -185,28 +207,49 @@ export default function Home() {
           </button>
         )}
 
+        {/* Cargando ligas */}
+        {isLoggedIn && loadingLeagues && (
+          <div className="mb-6 p-4 rounded-xl border border-[var(--border)] text-center">
+            <p className="text-sm text-[var(--text-secondary)]">Cargando tus ligas…</p>
+          </div>
+        )}
+
         {/* Mis ligas (usuario logado) */}
         {isLoggedIn && !loadingLeagues && userLeagues.length > 0 && (
-          <div className="mb-6 p-4 rounded-xl border border-[var(--border)]">
-            <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-              Mis ligas
-            </p>
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Mis ligas ({userLeagues.length})
+              </p>
+              <button onClick={signOut} className="text-xs text-[var(--text-secondary)] hover:text-white transition-colors">
+                Cerrar sesión
+              </button>
+            </div>
             <div className="space-y-2">
               {userLeagues.map(entry => (
                 <button
                   key={entry.id}
                   onClick={() => goToLeague(entry)}
-                  className="w-full text-left p-3 rounded-lg bg-[var(--bg-elevated)] hover:border-[var(--accent)] border border-[var(--border)] transition-colors"
+                  className="w-full flex items-center gap-3 text-left p-3 rounded-xl bg-[var(--bg-elevated)] hover:border-[var(--accent)] border border-[var(--border)] transition-colors"
                 >
-                  <span className="font-semibold">{entry.leagues?.name}</span>
-                  <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                    entry.leagues?.status === 'active' ? 'bg-[var(--green)]/20 text-[var(--green)]' :
-                    entry.leagues?.status === 'drafting' ? 'bg-[var(--accent)]/20 text-[var(--accent-glow)]' :
-                    'bg-[var(--border)] text-[var(--text-secondary)]'
-                  }`}>
-                    {entry.leagues?.status === 'active' ? 'En juego' :
-                     entry.leagues?.status === 'drafting' ? 'Draft' : 'Espera'}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold truncate">{entry.leagues?.name}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${
+                        entry.leagues?.status === 'active' ? 'bg-[var(--green)]/20 text-[var(--green)]' :
+                        entry.leagues?.status === 'drafting' ? 'bg-[var(--accent)]/20 text-[var(--accent-glow)]' :
+                        'bg-[var(--border)] text-[var(--text-secondary)]'
+                      }`}>
+                        {entry.leagues?.status === 'active' ? 'En juego' :
+                         entry.leagues?.status === 'drafting' ? 'Draft' : 'Espera'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      <span className="font-mono tracking-wider">{entry.leagues?.code}</span>
+                      {' · '}Juegas como {entry.name}
+                    </p>
+                  </div>
+                  <span className="text-[var(--text-secondary)] text-lg shrink-0">›</span>
                 </button>
               ))}
             </div>
@@ -214,9 +257,14 @@ export default function Home() {
         )}
 
         {isLoggedIn && !loadingLeagues && userLeagues.length === 0 && (
-          <p className="text-center text-sm text-[var(--text-secondary)] mb-6">
-            ✅ Sesión iniciada — crea o únete a una liga
-          </p>
+          <div className="mb-6 flex items-center justify-between">
+            <p className="text-sm text-[var(--text-secondary)]">
+              ✅ Sesión iniciada — crea o únete a una liga
+            </p>
+            <button onClick={signOut} className="text-xs text-[var(--text-secondary)] hover:text-white transition-colors shrink-0 ml-2">
+              Cerrar sesión
+            </button>
+          </div>
         )}
 
         {/* Tabs */}

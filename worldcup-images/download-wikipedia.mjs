@@ -15,16 +15,27 @@ function normalizeName(name) {
   return encodeURIComponent(name);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+const SLEEP_MS = 1500;
+
+// Wikimedia exige un User-Agent descriptivo; sin él devuelve 403
+const HEADERS = {
+  "User-Agent": "FantasyMundial2026/1.0 (proyecto educativo; contacto@example.com)",
+};
+
 async function searchWikipedia(player) {
   const query = `${player.name} footballer`;
 
   const url =
     `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: HEADERS });
 
   if (!res.ok) {
-    throw new Error("Wikipedia search failed");
+    throw new Error(`Wikipedia search failed (${res.status})`);
   }
 
   const data = await res.json();
@@ -40,7 +51,7 @@ async function getImageUrl(title) {
   const url =
     `https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&piprop=original&titles=${encodeURIComponent(title)}&format=json`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: HEADERS });
 
   if (!res.ok) {
     return null;
@@ -60,10 +71,10 @@ async function getImageUrl(title) {
 }
 
 async function downloadImage(url, filename) {
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: HEADERS });
 
   if (!res.ok) {
-    throw new Error("Image download failed");
+    throw new Error(`Image download failed (${res.status})`);
   }
 
   const buffer = Buffer.from(
@@ -81,6 +92,7 @@ for (const player of players) {
 
     if (!title) {
       console.log("❌ No encontrada");
+      await sleep(SLEEP_MS);
       continue;
     }
 
@@ -88,6 +100,7 @@ for (const player of players) {
 
     if (!imageUrl) {
       console.log("⚠️ Sin foto");
+      await sleep(SLEEP_MS);
       continue;
     }
 
@@ -108,9 +121,13 @@ for (const player of players) {
       `✅ ${player.name}`
     );
 
+    await sleep(SLEEP_MS);
+
   } catch (error) {
     console.log(
       `❌ ${player.name}`
     );
+
+    await sleep(SLEEP_MS);
   }
 }

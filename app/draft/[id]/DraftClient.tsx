@@ -152,7 +152,7 @@ const draftCompleted =
       {/* Header */}
       <div className="mb-6">
         <p className="text-[var(--text-secondary)] text-xs uppercase tracking-widest">{league.name}</p>
-        <h1 className="text-2xl font-black mt-0.5">Draft en Serpiente 🐍</h1>
+        <h1 className="text-2xl font-black mt-0.5">Draft del Mundial</h1>
       </div>
 
       {/* Estado del turno */}
@@ -280,13 +280,12 @@ const draftCompleted =
 const POS_LABEL: Record<string, string> = { GK: 'Porteros', DF: 'Defensas', MF: 'Centrocampistas', FW: 'Delanteros' }
 
 function PlayerAvatar({ player }: { player: SquadPlayer }) {
-  const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&size=48&background=1f2937&color=fff&bold=true&rounded=true`
   return (
     <img
-      src={player.photo_url ?? fallback}
+      src={player.photo_url ?? DEFAULT_PLAYER_IMG}
       alt={player.name}
       className="w-10 h-10 rounded-full object-cover bg-[var(--bg-elevated)]"
-      onError={e => { (e.target as HTMLImageElement).src = fallback }}
+      onError={e => { (e.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }}
     />
   )
 }

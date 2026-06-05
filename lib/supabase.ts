@@ -6,7 +6,7 @@ export const supabase = createClient(
 )
 
 export const DEFAULT_PLAYER_IMG =
-  `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/player-images/default.png`
+  `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/player-images/default.jpg`
 
 // ─── helpers de identidad (sin auth) ───────────────────────
 export function getPlayerId(): string | null {

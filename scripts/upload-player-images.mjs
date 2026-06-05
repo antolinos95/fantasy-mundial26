@@ -56,19 +56,32 @@ async function main() {
   await ensureBucket()
 
   // Subir imagen por defecto
-  const defaultPath = join(IMAGES_DIR, 'default.png')
+  const defaultPath = join(IMAGES_DIR, 'default.jpg')
   if (existsSync(defaultPath)) {
-    await supabase.storage.from(BUCKET).upload('default.png', readFileSync(defaultPath), {
-      contentType: 'image/png', upsert: true,
+    const { error } = await supabase.storage.from(BUCKET).upload('default.jpg', readFileSync(defaultPath), {
+      contentType: 'image/jpeg', upsert: true,
     })
-    console.log('✓ Imagen default subida')
+    if (error) console.error('❌ Default:', error.message)
+    else console.log('✓ Imagen default.jpg subida')
+  } else {
+    console.log('⚠️  No se encontró default.jpg en', IMAGES_DIR)
   }
 
   let uploaded = 0, matched = 0, notFound = 0
 
+  const CONTENT_TYPES = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    webp: 'image/webp', gif: 'image/gif',
+  }
+
   for (const entry of playerMap) {
-    const imgPath = join(IMAGES_DIR, `${entry.id}.png`)
-    if (!existsSync(imgPath)) continue
+    // La imagen puede tener varias extensiones según la fuente
+    let imgPath = null, ext = null
+    for (const e of Object.keys(CONTENT_TYPES)) {
+      const p = join(IMAGES_DIR, `${entry.id}.${e}`)
+      if (existsSync(p)) { imgPath = p; ext = e; break }
+    }
+    if (!imgPath) continue
 
     // Buscar jugador en BD por nombre normalizado + equipo
     const dbPlayer = dbPlayers.find(p =>
@@ -85,13 +98,13 @@ async function main() {
     matched++
 
     // Subir imagen
-    const storagePath = `${entry.id}.png`
+    const storagePath = `${entry.id}.${ext}`
     const fileBuffer = readFileSync(imgPath)
 
     const { error: uploadErr } = await supabase.storage
       .from(BUCKET)
       .upload(storagePath, fileBuffer, {
-        contentType: 'image/png',
+        contentType: CONTENT_TYPES[ext],
         upsert: true,
       })
 
