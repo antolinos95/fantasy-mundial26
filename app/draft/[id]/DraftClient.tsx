@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, getPlayerId } from '../../../lib/supabase'
-import type { League, Player, Team, DraftOrder, DraftState, DraftedTeam } from '../../../types'
+import { supabase, setPlayerId } from '../../../lib/supabase'
+import type { League, Player, Team, DraftOrder, DraftState, DraftedTeam, SquadPlayer } from '../../../types'
 
 export default function DraftClient({
   league,
@@ -26,8 +26,20 @@ export default function DraftClient({
   const [myId, setMyId] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
   const [search, setSearch] = useState('')
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
 
-  useEffect(() => { setMyId(getPlayerId()) }, [])
+  useEffect(() => {
+    async function resolveMyId() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: player } = await supabase
+        .from('players').select('id')
+        .eq('league_id', league.id).eq('user_id', user.id)
+        .maybeSingle()
+      if (player) { setPlayerId(player.id); setMyId(player.id) }
+    }
+    resolveMyId()
+  }, [league.id])
 
   // Realtime
   useEffect(() => {
@@ -52,10 +64,10 @@ export default function DraftClient({
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'leagues',
-        filter: `id=eq.${league.id}`,
       }, (payload) => {
         const updated = payload.new as League
-        if (updated.status === 'active') router.push(`/standings/${league.id}`)
+        if (updated.id === league.id && updated.status === 'active')
+          router.push(`/standings/${league.id}`)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -81,7 +93,8 @@ export default function DraftClient({
 
   const currentPlayer = draftState ? getPlayerAtPick(draftState.current_pick) : null
   const isMyTurn = !!myId && currentPlayer?.id === myId
-  const isFinished = draftState?.finished || availableTeams.length < players.length
+const isFinished =
+  draftState?.finished ?? false
 
   async function pickTeam(teamId: string) {
     if (!isMyTurn || picking || !draftState) return
@@ -95,18 +108,37 @@ export default function DraftClient({
     })
     if (error) { alert(error.message); setPicking(false); return }
 
+    const limit = draftState.teams_per_player || 0
+
+const picksAfter = draftedTeams.length + 1
+
+const totalNeeded =
+  players.length * limit
+
+const draftCompleted =
+  picksAfter >= totalNeeded
     const nextPick = draftState.current_pick + 1
     const zp = nextPick - 1
     const nextRound = Math.floor(zp / n) + 1
 
     // Comprobar si el draft termina
-    const remainingAfter = availableTeams.length - 1
-    if (remainingAfter < players.length) {
-      await supabase.from('draft_state')
-        .update({ current_pick: nextPick, round: nextRound, finished: true })
-        .eq('league_id', league.id)
-      await supabase.from('leagues').update({ status: 'active' }).eq('id', league.id)
-    } else {
+    if (draftCompleted) {
+  await supabase
+    .from('draft_state')
+    .update({
+      current_pick: nextPick,
+      round: nextRound,
+      finished: true,
+    })
+    .eq('league_id', league.id)
+
+  await supabase
+    .from('leagues')
+    .update({
+      status: 'active',
+    })
+    .eq('id', league.id)
+} else {
       await supabase.from('draft_state')
         .update({ current_pick: nextPick, round: nextRound })
         .eq('league_id', league.id)
@@ -162,17 +194,12 @@ export default function DraftClient({
             {filteredTeams.map(team => (
               <button
                 key={team.id}
-                onClick={() => pickTeam(team.id)}
-                disabled={!isMyTurn || picking || isFinished}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all
-                  ${isMyTurn && !picking && !isFinished
-                    ? 'border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer'
-                    : 'border-[var(--border)] opacity-50 cursor-not-allowed'
-                  }`}
+                onClick={() => setSelectedTeam(team)}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--accent)]/10 text-left transition-all cursor-pointer"
               >
                 <span className="text-xl">{team.flag_emoji}</span>
                 <span className="font-medium text-sm">{team.name}</span>
-                <span className="ml-auto text-xs text-[var(--text-secondary)]">{team.group_name}</span>
+                <span className="ml-auto text-xs text-[var(--text-secondary)]">Grupo {team.group_name}</span>
               </button>
             ))}
             {filteredTeams.length === 0 && (
@@ -234,6 +261,140 @@ export default function DraftClient({
           Ver clasificación →
         </button>
       )}
+
+      {selectedTeam && (
+        <TeamPanel
+          team={selectedTeam}
+          leagueId={league.id}
+          canPick={isMyTurn && !picking && !isFinished}
+          onPick={() => { pickTeam(selectedTeam.id); setSelectedTeam(null) }}
+          onClose={() => setSelectedTeam(null)}
+        />
+      )}
     </main>
+  )
+}
+
+// ─── Panel de equipo ─────────────────────────────────────────
+
+const POS_LABEL: Record<string, string> = { GK: 'Porteros', DF: 'Defensas', MF: 'Centrocampistas', FW: 'Delanteros' }
+
+function PlayerAvatar({ player }: { player: SquadPlayer }) {
+  const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&size=48&background=1f2937&color=fff&bold=true&rounded=true`
+  return (
+    <img
+      src={player.photo_url ?? fallback}
+      alt={player.name}
+      className="w-10 h-10 rounded-full object-cover bg-[var(--bg-elevated)]"
+      onError={e => { (e.target as HTMLImageElement).src = fallback }}
+    />
+  )
+}
+
+function TeamPanel({ team, leagueId, canPick, onPick, onClose }: {
+  team: Team
+  leagueId: string
+  canPick: boolean
+  onPick: () => void
+  onClose: () => void
+}) {
+  const [squad, setSquad]   = useState<SquadPlayer[]>([])
+  const [stats, setStats]   = useState<Record<string, { goals: number; own_goals: number; red_cards: number }>>({})
+  const [loading, setLoading] = useState(true)
+  const [dbError, setDbError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setDbError(null)
+    Promise.all([
+      supabase.from('squad_players').select('*')
+        .eq('team_id', team.id).order('position').order('shirt_number'),
+      supabase.from('player_stats_by_league').select('squad_player_id,goals,own_goals,red_cards')
+        .eq('team_id', team.id).eq('league_id', leagueId),
+    ]).then(([squadRes, statsRes]) => {
+      if (squadRes.error) setDbError(squadRes.error.message)
+      setSquad(squadRes.data ?? [])
+      const map: Record<string, { goals: number; own_goals: number; red_cards: number }> = {}
+      for (const s of (statsRes.data ?? [])) map[s.squad_player_id] = s
+      setStats(map)
+      setLoading(false)
+    })
+  }, [team.id, leagueId])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)]">
+          <span className="text-4xl">{team.flag_emoji}</span>
+          <div className="flex-1">
+            <p className="font-black text-lg">{team.name}</p>
+            <p className="text-xs text-[var(--text-secondary)]">Grupo {team.group_name}</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
+        </div>
+
+        {/* Squad */}
+        <div className="overflow-y-auto flex-1 px-3 py-3">
+          {loading && <p className="text-center text-[var(--text-secondary)] py-6 text-sm">Cargando plantilla…</p>}
+          {!loading && dbError && <p className="text-center text-[var(--red)] py-4 text-xs px-2">{dbError}</p>}
+          {!loading && !dbError && squad.length === 0 && (
+            <p className="text-center text-[var(--text-secondary)] py-6 text-sm">
+              Sin jugadores — ejecuta el seed de plantillas
+            </p>
+          )}
+          {!loading && (['GK','DF','MF','FW'] as const).map(pos => {
+            const group = squad.filter(p => p.position === pos)
+            if (!group.length) return null
+            return (
+              <div key={pos} className="mb-4">
+                <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{POS_LABEL[pos]}</p>
+                <div className="space-y-1.5">
+                  {group.map(player => {
+                    const st = stats[player.id]
+                    return (
+                      <div key={player.id} className="flex items-center gap-3 px-2 py-1.5 rounded-xl bg-[var(--bg-elevated)]">
+                        <div className="relative shrink-0">
+                          <PlayerAvatar player={player} />
+                          {st?.red_cards > 0 && (
+                            <span className="absolute -top-1 -right-1 text-[9px] bg-[var(--red)] rounded-full w-4 h-4 flex items-center justify-center">🟥</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{player.name}</p>
+                          <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                            {st?.goals > 0 && <span className="text-[10px] text-[var(--text-secondary)]">⚽ {st.goals}</span>}
+                            {st?.own_goals > 0 && <span className="text-[10px] text-[var(--text-secondary)]">🥅 {st.own_goals}</span>}
+                          </div>
+                        </div>
+                        {player.shirt_number && (
+                          <span className="text-sm font-black text-[var(--text-secondary)] w-6 text-right shrink-0">
+                            {player.shirt_number}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Pick button */}
+        <div className="p-4 border-t border-[var(--border)]">
+          {canPick
+            ? <button onClick={onPick} className="w-full py-3 bg-[var(--accent)] hover:bg-[var(--accent-glow)] text-white font-black rounded-xl transition-colors">
+                ✓ Elegir {team.name}
+              </button>
+            : <p className="text-center text-sm text-[var(--text-secondary)]">
+                {team.name} · Grupo {team.group_name}
+              </p>
+          }
+        </div>
+      </div>
+    </div>
   )
 }

@@ -1,12 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, setPlayerId, setLeagueId } from '../lib/supabase'
+import type { Player, League } from '../types'
+
+type PlayerWithLeague = Player & { leagues: League }
 
 export default function Home() {
   const router = useRouter()
   const [tab, setTab] = useState<'create' | 'join'>('create')
+  const [userLeagues, setUserLeagues] = useState<PlayerWithLeague[]>([])
+  const [loadingLeagues, setLoadingLeagues] = useState(true)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   // Create
   const [leagueName, setLeagueName] = useState('')
@@ -20,33 +26,83 @@ export default function Home() {
 
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    checkUser()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session)
+      if (session) loadUserLeagues(session.user.id)
+      else { setUserLeagues([]); setLoadingLeagues(false) }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function checkUser() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoadingLeagues(false); return }
+    setIsLoggedIn(true)
+    await loadUserLeagues(user.id)
+  }
+
+  async function loadUserLeagues(userId: string) {
+    const { data } = await supabase
+      .from('players')
+      .select('*, leagues(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    setUserLeagues((data as PlayerWithLeague[]) ?? [])
+    setLoadingLeagues(false)
+  }
+
+  function goToLeague(entry: PlayerWithLeague) {
+    setPlayerId(entry.id)
+    setLeagueId(entry.league_id)
+    const league = entry.leagues
+    if (!league) return
+    if (league.status === 'waiting') router.push(`/lobby/${league.id}`)
+    else if (league.status === 'drafting') router.push(`/draft/${league.id}`)
+    else router.push(`/standings/${league.id}`)
+  }
+
+  async function loginWithGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo:
+          process.env.NODE_ENV === 'development'
+            ? 'http://localhost:3000'
+            : 'https://fantasy-mundial26.vercel.app',
+      },
+    })
+  }
+
   async function handleCreate() {
-    if (!leagueName.trim() || !adminName.trim()) {
-      setError('Rellena todos los campos')
-      return
-    }
+    if (!leagueName.trim() || !adminName.trim()) { setError('Rellena todos los campos'); return }
     setCreating(true)
     setError('')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setError('Inicia sesión con Google primero'); setCreating(false); return }
+
     const leagueCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
     const { data: league, error: leagueErr } = await supabase
       .from('leagues')
-      .insert({ name: leagueName.trim(), code: leagueCode })
+      .insert({ name: leagueName.trim(), code: leagueCode, admin_user_id: user.id })
       .select()
       .single()
 
-    if (leagueErr || !league) { setError(leagueErr?.message ?? 'Error'); setCreating(false); return }
+    if (leagueErr || !league) { setError(leagueErr?.message ?? 'Error al crear liga'); setCreating(false); return }
 
     const { data: player, error: playerErr } = await supabase
       .from('players')
-      .insert({ league_id: league.id, name: adminName.trim() })
+      .insert({ league_id: league.id, name: adminName.trim(), user_id: user.id })
       .select()
       .single()
 
-    if (playerErr || !player) { setError(playerErr?.message ?? 'Error'); setCreating(false); return }
+    if (playerErr || !player) { setError(playerErr?.message ?? 'Error al crear jugador'); setCreating(false); return }
 
-    // Marcar como admin
-    await supabase.from('leagues').update({ admin_player_id: player.id }).eq('id', league.id)
+    await supabase.from('leagues').update({ admin_player_id: player.id, admin_user_id: user.id }).eq('id', league.id)
 
     setPlayerId(player.id)
     setLeagueId(league.id)
@@ -58,6 +114,9 @@ export default function Home() {
     setJoining(true)
     setError('')
 
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setError('Inicia sesión con Google primero'); setJoining(false); return }
+
     const { data: league, error: leagueErr } = await supabase
       .from('leagues')
       .select('*')
@@ -66,13 +125,30 @@ export default function Home() {
 
     if (leagueErr || !league) { setError('Liga no encontrada'); setJoining(false); return }
 
+    // Check if already joined
+    const { data: existing } = await supabase
+      .from('players')
+      .select('id')
+      .eq('league_id', league.id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (existing) {
+      setPlayerId(existing.id)
+      setLeagueId(league.id)
+      if (league.status === 'waiting') router.push(`/lobby/${league.id}`)
+      else if (league.status === 'drafting') router.push(`/draft/${league.id}`)
+      else router.push(`/standings/${league.id}`)
+      return
+    }
+
     const { data: player, error: playerErr } = await supabase
       .from('players')
-      .insert({ league_id: league.id, name: playerName.trim() })
+      .insert({ league_id: league.id, name: playerName.trim(), user_id: user.id })
       .select()
       .single()
 
-    if (playerErr || !player) { setError(playerErr?.message ?? 'Error'); setJoining(false); return }
+    if (playerErr || !player) { setError(playerErr?.message ?? 'Error al unirse'); setJoining(false); return }
 
     setPlayerId(player.id)
     setLeagueId(league.id)
@@ -85,13 +161,64 @@ export default function Home() {
       <div className="text-center mb-10">
         <div className="text-5xl mb-3">⚽</div>
         <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
-          IT'S FÚTBOL,<br className="sm:hidden" /> NOT SOCCER
+          IT&apos;S FÚTBOL,<br className="sm:hidden" /> NOT SOCCER
         </h1>
         <p className="mt-2 text-[var(--text-secondary)]">Fantasy Mundial 2026</p>
       </div>
 
       {/* Card */}
       <div className="w-full max-w-md bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-6">
+
+        {/* Google login */}
+        {!isLoggedIn && (
+          <button
+            onClick={loginWithGoogle}
+            className="w-full mb-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Continuar con Google
+          </button>
+        )}
+
+        {/* Mis ligas (usuario logado) */}
+        {isLoggedIn && !loadingLeagues && userLeagues.length > 0 && (
+          <div className="mb-6 p-4 rounded-xl border border-[var(--border)]">
+            <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+              Mis ligas
+            </p>
+            <div className="space-y-2">
+              {userLeagues.map(entry => (
+                <button
+                  key={entry.id}
+                  onClick={() => goToLeague(entry)}
+                  className="w-full text-left p-3 rounded-lg bg-[var(--bg-elevated)] hover:border-[var(--accent)] border border-[var(--border)] transition-colors"
+                >
+                  <span className="font-semibold">{entry.leagues?.name}</span>
+                  <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                    entry.leagues?.status === 'active' ? 'bg-[var(--green)]/20 text-[var(--green)]' :
+                    entry.leagues?.status === 'drafting' ? 'bg-[var(--accent)]/20 text-[var(--accent-glow)]' :
+                    'bg-[var(--border)] text-[var(--text-secondary)]'
+                  }`}>
+                    {entry.leagues?.status === 'active' ? 'En juego' :
+                     entry.leagues?.status === 'drafting' ? 'Draft' : 'Espera'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isLoggedIn && !loadingLeagues && userLeagues.length === 0 && (
+          <p className="text-center text-sm text-[var(--text-secondary)] mb-6">
+            ✅ Sesión iniciada — crea o únete a una liga
+          </p>
+        )}
+
         {/* Tabs */}
         <div className="flex rounded-lg overflow-hidden border border-[var(--border)] mb-6">
           {(['create', 'join'] as const).map(t => (

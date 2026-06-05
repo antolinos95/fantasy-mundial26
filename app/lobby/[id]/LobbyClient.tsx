@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, getPlayerId } from '../../../lib/supabase'
+import { supabase } from '../../../lib/supabase'
 import type { League, Player } from '../../../types'
 
 export default function LobbyClient({
@@ -14,12 +14,15 @@ export default function LobbyClient({
 }) {
   const router = useRouter()
   const [players, setPlayers] = useState<Player[]>(initialPlayers)
-  const [myId, setMyId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [autoRunning, setAutoRunning] = useState(false)
 
-  useEffect(() => { setMyId(getPlayerId()) }, [])
-
-  const isAdmin = myId === league.admin_player_id
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setIsAdmin(user.id === league.admin_user_id)
+    })
+  }, [league.admin_user_id])
 
   // Realtime: escuchar nuevos jugadores
   useEffect(() => {
@@ -33,13 +36,11 @@ export default function LobbyClient({
           .order('created_at', { ascending: true })
           .then(({ data }) => { if (data) setPlayers(data) })
       })
-      // Escuchar cambio de status de la liga para redirigir
       .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'leagues',
-        filter: `id=eq.${league.id}`,
-      }, (payload) => {
-        const updated = payload.new as League
-        if (updated.status === 'drafting') router.push(`/draft/${league.id}`)
+        event: '*', schema: 'public', table: 'draft_state',
+        filter: `league_id=eq.${league.id}`,
+      }, () => {
+        router.push(`/draft/${league.id}`)
       })
       .subscribe()
 
@@ -62,12 +63,13 @@ export default function LobbyClient({
       league_id: league.id, player_id: p.id, draft_position: i + 1,
     }))
 
+    await supabase.from('draft_order').delete().eq('league_id', league.id)
     const { error: orderErr } = await supabase.from('draft_order').insert(orderRows)
     if (orderErr) { alert(orderErr.message); setStarting(false); return }
 
     const { error: stateErr } = await supabase
     .from('draft_state')
-    .insert({
+    .upsert({
       league_id: league.id,
       current_pick: 1,
       round: 1,
@@ -75,12 +77,58 @@ export default function LobbyClient({
       finished: false,
       direction: 1,
       teams_per_player: teamsPerPlayer,
-    })
+    }, { onConflict: 'league_id' })
     if (stateErr) { alert(stateErr.message); setStarting(false); return }
 
     // Cambiar status de la liga → redirigirá via realtime a todos
     await supabase.from('leagues').update({ status: 'drafting' }).eq('id', league.id)
     router.push(`/draft/${league.id}`)
+  }
+
+  async function autoDraft() {
+    if (!confirm(`¿Draft automático con ${players.length} jugadores? (solo para debug)`)) return
+    setAutoRunning(true)
+
+    const { data: allTeams } = await supabase.from('teams').select('id').order('name')
+    if (!allTeams?.length) { alert('Sin equipos en BD'); setAutoRunning(false); return }
+
+    const n = players.length
+    const teamsPerPlayer = Math.floor(allTeams.length / n)
+    const shuffledPlayers = [...players].sort(() => Math.random() - 0.5)
+    const shuffledTeams   = [...allTeams].sort(() => Math.random() - 0.5)
+
+    // Draft order
+    await supabase.from('draft_order').delete().eq('league_id', league.id)
+    await supabase.from('draft_order').insert(
+      shuffledPlayers.map((p, i) => ({ league_id: league.id, player_id: p.id, draft_position: i + 1 }))
+    )
+
+    // Asignar equipos en serpiente
+    const totalPicks = n * teamsPerPlayer
+    const draftedRows = []
+    for (let pick = 0; pick < totalPicks; pick++) {
+      const round      = Math.floor(pick / n)
+      const posInRound = pick % n
+      const idx        = round % 2 === 0 ? posInRound : n - 1 - posInRound
+      draftedRows.push({
+        league_id:   league.id,
+        team_id:     shuffledTeams[pick].id,
+        player_id:   shuffledPlayers[idx].id,
+        pick_number: pick + 1,
+      })
+    }
+
+    await supabase.from('drafted_teams').delete().eq('league_id', league.id)
+    await supabase.from('drafted_teams').insert(draftedRows)
+
+    await supabase.from('draft_state').upsert({
+      league_id: league.id, current_pick: totalPicks + 1,
+      round: teamsPerPlayer + 1, started: true, finished: true,
+      direction: 1, teams_per_player: teamsPerPlayer,
+    }, { onConflict: 'league_id' })
+
+    await supabase.from('leagues').update({ status: 'active' }).eq('id', league.id)
+    router.push(`/standings/${league.id}`)
   }
 
   return (
@@ -124,7 +172,7 @@ export default function LobbyClient({
                       Admin
                     </span>
                   )}
-                  {p.id === myId && (
+                  {isAdmin && p.id === league.admin_player_id && (
                     <span className="text-xs text-[var(--text-secondary)]">Tú</span>
                   )}
                 </li>
@@ -144,13 +192,22 @@ export default function LobbyClient({
 
         {/* Start button (only admin) */}
         {isAdmin && (
-          <button
-            onClick={startDraft}
-            disabled={starting || players.length < 2}
-            className="w-full py-4 bg-[var(--accent)] hover:bg-[var(--accent-glow)] text-white font-black text-lg rounded-2xl transition-colors disabled:opacity-40"
-          >
-            {starting ? 'Iniciando...' : '🏁 Iniciar Draft'}
-          </button>
+          <div className="space-y-3">
+            <button
+              onClick={startDraft}
+              disabled={starting || autoRunning || players.length < 2}
+              className="w-full py-4 bg-[var(--accent)] hover:bg-[var(--accent-glow)] text-white font-black text-lg rounded-2xl transition-colors disabled:opacity-40"
+            >
+              {starting ? 'Iniciando...' : '🏁 Iniciar Draft'}
+            </button>
+            <button
+              onClick={autoDraft}
+              disabled={starting || autoRunning || players.length < 1}
+              className="w-full py-2.5 border border-[var(--border)] text-[var(--text-secondary)] text-sm font-semibold rounded-xl hover:border-[var(--yellow)] hover:text-[var(--yellow)] transition-colors disabled:opacity-40"
+            >
+              {autoRunning ? 'Asignando...' : '🎲 Draft automático (debug)'}
+            </button>
+          </div>
         )}
         {!isAdmin && (
           <p className="text-center text-[var(--text-secondary)] text-sm">
