@@ -1339,51 +1339,10 @@ function AdminTab({ league, matches, players, router }: {
   league: League; matches: Match[]; players: Player[]; router: ReturnType<typeof useRouter>
 }) {
   const [allTeams, setAllTeams] = useState<import('../../../types').Team[]>([])
-  const [homeId, setHomeId]     = useState('')
-  const [awayId, setAwayId]     = useState('')
-  const [matchDate, setMatchDate] = useState('')
-  const [matchType, setMatchType] = useState<Match['match_type']>('group')
-  const [creating, setCreating]       = useState(false)
-  const [loadingMatches, setLoadingMatches] = useState(false)
 
   useEffect(() => {
     supabase.from('teams').select('*').order('name').then(({ data }) => { if (data) setAllTeams(data) })
   }, [])
-
-  async function loadKnockout() {
-    if (!confirm('¿Cargar el cuadro eliminatorio (32 partidos)? Necesita schema_v5.sql ejecutado.')) return
-    setLoadingMatches(true)
-    const { data, error } = await supabase.rpc('load_knockout_matches', { p_league_id: league.id })
-    if (error) alert(`Error: ${error.message}`)
-    else alert(`✅ ${data} partidos eliminatorios cargados`)
-    setLoadingMatches(false)
-    router.refresh()
-  }
-
-  async function loadGroupStage() {
-    if (!confirm('¿Cargar los 72 partidos de fase de grupos? Se añadirán a esta liga.')) return
-    setLoadingMatches(true)
-    const { data, error } = await supabase.rpc('load_group_stage_matches', { p_league_id: league.id })
-    if (error) {
-      alert(`Error: ${error.message}\n\nAsegúrate de haber ejecutado supabase/seed_matches.sql en el SQL Editor de Supabase.`)
-    } else {
-      alert(`✅ ${data} partidos cargados`)
-    }
-    setLoadingMatches(false)
-    router.refresh()
-  }
-
-  async function createMatch() {
-    if (!homeId || !awayId || homeId === awayId) { alert('Selecciona dos equipos distintos'); return }
-    setCreating(true)
-    const { error } = await supabase.from('matches').insert({
-      league_id: league.id, home_team_id: homeId, away_team_id: awayId,
-      match_date: matchDate || null, match_type: matchType,
-    })
-    if (error) alert(error.message)
-    setCreating(false)
-    router.refresh()
-  }
 
   async function setResult(matchId: string, h: number, a: number) {
     const { error: updateErr } = await supabase
@@ -1409,38 +1368,6 @@ function AdminTab({ league, matches, players, router }: {
 
   return (
     <div className="space-y-6">
-
-      {/* Crear partido */}
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
-        <h2 className="font-bold mb-4">Crear partido manualmente</h2>
-        <div className="space-y-3">
-          <select value={homeId} onChange={e => setHomeId(e.target.value)}
-            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none">
-            <option value="">Equipo local…</option>
-            {allTeams.map(t => <option key={t.id} value={t.id}>{t.flag_emoji} {t.name}</option>)}
-          </select>
-          <select value={awayId} onChange={e => setAwayId(e.target.value)}
-            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none">
-            <option value="">Equipo visitante…</option>
-            {allTeams.map(t => <option key={t.id} value={t.id}>{t.flag_emoji} {t.name}</option>)}
-          </select>
-          <select value={matchType ?? 'group'} onChange={e => setMatchType(e.target.value as NonNullable<Match['match_type']>)}
-            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none">
-            <option value="group">Fase de grupos</option>
-            <option value="r16">Octavos de final</option>
-            <option value="qf">Cuartos de final</option>
-            <option value="sf">Semifinal</option>
-            <option value="third_place">Tercer puesto</option>
-            <option value="final">Final</option>
-          </select>
-          <input type="datetime-local" value={matchDate} onChange={e => setMatchDate(e.target.value)}
-            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none" />
-          <button onClick={createMatch} disabled={creating}
-            className="w-full py-2.5 bg-[var(--accent)] text-white font-bold rounded-xl disabled:opacity-50">
-            {creating ? 'Creando…' : 'Crear partido'}
-          </button>
-        </div>
-      </div>
 
       {/* Pendientes */}
       <AdminMatchSection
