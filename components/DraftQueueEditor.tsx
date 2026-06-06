@@ -28,12 +28,7 @@ export default function DraftQueueEditor({
       const allTeams = tRes.data ?? []
       setTeams(allTeams)
       const savedQueue = (qRes.data ?? []).map(r => r.team_id)
-      // Si no hay cola guardada, ordenar todos los equipos alfabéticamente por defecto
-      if (savedQueue.length === 0) {
-        setQueue(allTeams.map(t => t.id))
-      } else {
-        setQueue(savedQueue)
-      }
+      setQueue(savedQueue)
       setLoaded(true)
     })
   }, [playerId])
