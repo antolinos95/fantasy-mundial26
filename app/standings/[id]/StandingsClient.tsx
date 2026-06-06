@@ -96,6 +96,10 @@ export default function StandingsClient({
             className="flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl px-3 py-2 text-sm font-semibold transition-colors">
             ❓ FAQ
           </button>
+          <button onClick={() => location.reload()}
+            className="flex items-center justify-center bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl w-10 py-2 text-sm transition-colors">
+            🔄
+          </button>
           <button onClick={() => setShowSettings(true)}
             className="flex items-center justify-center bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl w-10 py-2 text-sm transition-colors">
             ⚙️
