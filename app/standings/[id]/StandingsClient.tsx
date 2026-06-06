@@ -815,6 +815,23 @@ function MatchesTab({
     return dt?.player?.name ?? null
   }
 
+  // ── Estado en vivo ──────────────────────────────────────────
+  function matchLiveState(match: Match): 'upcoming' | 'live' | 'halftime' | 'finished' {
+    if (match.status === 'finished') return 'finished'
+    if (!match.match_date) return 'upcoming'
+    const elapsed = (Date.now() - new Date(match.match_date).getTime()) / 60000
+    if (elapsed < 0) return 'upcoming'
+    if (elapsed >= 45 && elapsed < 60) return 'halftime'
+    return 'live'
+  }
+
+  function matchMinute(match: Match): number {
+    if (!match.match_date) return 0
+    const elapsed = (Date.now() - new Date(match.match_date).getTime()) / 60000
+    if (elapsed >= 60) return Math.min(Math.floor(elapsed - 15), 90)
+    return Math.min(Math.floor(elapsed), 45)
+  }
+
   // Se bloquea 2h antes del inicio del partido
   function isLocked(match: Match) {
     if (!match.match_date) return false
@@ -830,6 +847,11 @@ function MatchesTab({
   const [visibleMy, setVisibleMy]       = useState(5)
   const [visibleOther, setVisibleOther] = useState(5)
   const [myView, setMyView]             = useState<'pending' | 'finished'>('pending')
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30000) // rerender cada 30s
+    return () => clearInterval(t)
+  }, [])
 
   const allMyMatches    = myId ? matches.filter(m => myTeamIds.includes(m.home_team_id ?? '') || myTeamIds.includes(m.away_team_id ?? '')) : []
   const allOtherMatches = matches.filter(m => !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? ''))
@@ -918,15 +940,35 @@ function MatchesTab({
                     {/* Cabecera partido */}
                     <div className="flex items-center justify-between mb-2">
                       <TeamBadge team={m.home_team} owner={ownerName(m.home_team_id ?? '')} />
-                      {m.status === 'finished'
-                        ? <span className="font-black text-xl tabular-nums">{m.home_goals} - {m.away_goals}</span>
-                        : <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
-                      }
+                      <div className="flex flex-col items-center gap-0.5">
+                        {(() => {
+                          const state = matchLiveState(m)
+                          if (state === 'finished') return <span className="font-black text-xl tabular-nums">{m.home_goals} - {m.away_goals}</span>
+                          if (state === 'live') return (
+                            <>
+                              <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                              <span className="text-[10px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
+                            </>
+                          )
+                          if (state === 'halftime') return (
+                            <>
+                              <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                              <span className="text-[10px] font-bold text-[var(--yellow)]">DESCANSO</span>
+                            </>
+                          )
+                          return <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                        })()}
+                      </div>
                       <TeamBadge team={m.away_team} owner={ownerName(m.away_team_id ?? '')} right />
                     </div>
                     {m.match_date && (
                       <p className="text-xs text-center text-[var(--text-secondary)] mb-3">
-                        {new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {matchLiveState(m) === 'live'
+                          ? <span className="text-red-400 font-semibold">🔴 EN VIVO</span>
+                          : matchLiveState(m) === 'halftime'
+                          ? <span className="text-[var(--yellow)] font-semibold">⏸ Descanso</span>
+                          : new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })
+                        }
                         {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
                       </p>
                     )}
@@ -1087,9 +1129,25 @@ function MatchesTab({
                       <p className="text-sm font-medium truncate">{m.home_team?.name}</p>
                       {homeOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{homeOwner}</p>}
                     </div>
-                    <span className="font-black tabular-nums text-sm shrink-0">
-                      {m.status === 'finished' ? `${m.home_goals} - ${m.away_goals}` : 'vs'}
-                    </span>
+                    <div className="flex flex-col items-center shrink-0">
+                      {(() => {
+                        const state = matchLiveState(m)
+                        if (state === 'finished') return <span className="font-black tabular-nums text-sm">{m.home_goals} - {m.away_goals}</span>
+                        if (state === 'live') return (
+                          <>
+                            <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                            <span className="text-[9px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
+                          </>
+                        )
+                        if (state === 'halftime') return (
+                          <>
+                            <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                            <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
+                          </>
+                        )
+                        return <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                      })()}
+                    </div>
                     <div className="flex-1 min-w-0 text-right">
                       <p className="text-sm font-medium truncate">{m.away_team?.name}</p>
                       {awayOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{awayOwner}</p>}
