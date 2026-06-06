@@ -188,6 +188,8 @@ export default function Home() {
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
+      <InstallHint />
+
       {/* Card */}
       <div className="w-full max-w-md bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-6">
 
@@ -355,5 +357,34 @@ function Input({
       placeholder={placeholder}
       className={`w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-4 py-3 text-white placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] transition-colors ${className}`}
     />
+  )
+}
+
+// Aviso para instalar como app (iOS Safari no muestra prompt automático)
+function InstallHint() {
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      // @ts-expect-error iOS Safari
+      window.navigator.standalone === true
+    if (standalone) return
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const dismissed = localStorage.getItem('installHintDismissed')
+    if (isIOS && !dismissed) setShow(true)
+  }, [])
+
+  if (!show) return null
+  return (
+    <div className="w-full max-w-md mb-4 bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3 flex items-start gap-2 text-sm">
+      <span>📲</span>
+      <p className="flex-1 text-[var(--text-secondary)]">
+        Instala la app: pulsa <b className="text-white">Compartir</b> ⎋ y luego{' '}
+        <b className="text-white">Añadir a pantalla de inicio</b> ➕
+      </p>
+      <button onClick={() => { localStorage.setItem('installHintDismissed', '1'); setShow(false) }}
+        className="text-[var(--text-secondary)] hover:text-white">✕</button>
+    </div>
   )
 }
