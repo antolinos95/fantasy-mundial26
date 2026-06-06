@@ -153,9 +153,9 @@ export async function GET(req: NextRequest) {
       log.push(`✓ Updated ${homeEs} vs ${awayEs}: ${JSON.stringify(updates)}`)
     }
 
-    // 4. Si terminó, sincronizar goleadores
+    // 4. Si terminó, sincronizar goleadores y tarjetas rojas
     if (isFinished) {
-      await syncGoals(ourMatch.id, fm.goals ?? [], homeId, awayId)
+      await syncEvents(ourMatch.id, fm.goals ?? [], fm.bookings ?? [], homeId, awayId)
       // Recalcular puntos
       await supabaseAdmin.rpc('recalculate_scores', { p_match_id: ourMatch.id })
       log.push(`✓ Scores recalculated for ${homeEs} vs ${awayEs}`)
@@ -167,13 +167,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ synced, total: fdMatches.length, log })
 }
 
-async function syncGoals(
+async function syncEvents(
   matchId: string,
   goals: any[],
+  bookings: any[],
   homeTeamId: string,
   awayTeamId: string
 ) {
-  if (goals.length === 0) return
+  if (goals.length === 0 && bookings.length === 0) return
 
   // Cargar squad_players de los dos equipos
   const { data: squadPlayers } = await supabaseAdmin
@@ -222,6 +223,25 @@ async function syncGoals(
     if (!match) continue
 
     events.push({ match_id: matchId, squad_player_id: match.id, event_type: eventType })
+  }
+
+  // Tarjetas rojas
+  for (const booking of bookings) {
+    if (booking.card !== 'RED_CARD' && booking.card !== 'YELLOW_RED_CARD') continue
+    const playerName: string = booking.player?.name ?? booking.player?.shortName ?? ''
+    if (!playerName) continue
+
+    const normPlayer = normalize(playerName)
+    const match = squadPlayers.find(sp => {
+      const normSp = normalize(sp.name)
+      return normSp === normPlayer ||
+        normSp.includes(normPlayer) ||
+        normPlayer.includes(normSp) ||
+        normSp.split(' ').pop() === normPlayer.split(' ').pop()
+    })
+
+    if (!match) continue
+    events.push({ match_id: matchId, squad_player_id: match.id, event_type: 'red_card' })
   }
 
   if (events.length > 0) {
