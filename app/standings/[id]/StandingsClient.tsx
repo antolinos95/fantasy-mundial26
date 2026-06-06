@@ -8,6 +8,7 @@ import type {
   SquadPlayer, MatchLineup, PlayerEvent,
 } from '../../../types'
 import RulesModal from '../../../components/RulesModal'
+import PushSubscribeButton from '../../../components/PushSubscribeButton'
 
 type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'admin'
 
@@ -102,6 +103,7 @@ export default function StandingsClient({
       </div>
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      <PushSubscribeButton />
       {showSettings && myId && (
         <PlayerSettingsModal
           leagueId={league.id} playerId={myId}

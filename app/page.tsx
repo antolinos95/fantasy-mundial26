@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase, setPlayerId, setLeagueId } from '../lib/supabase'
 import type { Player, League } from '../types'
 import RulesModal from '../components/RulesModal'
+import PushSubscribeButton from '../components/PushSubscribeButton'
 
 type PlayerWithLeague = Player & { leagues: League }
 
@@ -189,6 +190,7 @@ export default function Home() {
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       <InstallHint />
+      <PushSubscribeButton />
 
       {/* Card */}
       <div className="w-full max-w-md bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-6">
