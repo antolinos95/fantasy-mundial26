@@ -880,7 +880,7 @@ function MatchesTab({
     <div className="space-y-8">
       {updatedAt && (
         <p className="text-[10px] text-center text-[var(--text-muted)] -mb-4">
-          Última actualización: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          Última actualización: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
         </p>
       )}
       {/* Recordatorios */}
@@ -2090,7 +2090,7 @@ function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId:
     <div className="mt-2 mb-1">
     {updatedAt && (
       <p className="text-[10px] text-center text-[var(--text-muted)] mb-1">
-        Actualizado: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        Actualizado: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
       </p>
     )}
     <div className="flex justify-between gap-2 text-xs">
