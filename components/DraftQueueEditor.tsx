@@ -77,6 +77,26 @@ export default function DraftQueueEditor({
             Ordena tus selecciones favoritas. Si no eliges a tiempo en tu turno, se cogerá la primera de esta lista que siga libre.
           </p>
 
+          {/* Ordenación rápida */}
+          {queue.length > 1 && (
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setQueue(q => [...q].sort((a, b) => (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')))}
+                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-white transition-colors">
+                A → Z
+              </button>
+              <button
+                onClick={() => setQueue(q => [...q].sort((a, b) => {
+                  const ga = teamById[a]?.group_name ?? ''
+                  const gb = teamById[b]?.group_name ?? ''
+                  return ga.localeCompare(gb) || (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')
+                }))}
+                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-white transition-colors">
+                Por grupo
+              </button>
+            </div>
+          )}
+
           {/* Cola ordenada */}
           {queue.length > 0 && (
             <div className="space-y-1.5 mb-3">
