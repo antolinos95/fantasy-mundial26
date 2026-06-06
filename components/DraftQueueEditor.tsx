@@ -137,6 +137,7 @@ export default function DraftQueueEditor({
                     isTaken ? 'border-[var(--border)] opacity-40' : 'border-[var(--border)] hover:border-[var(--accent)]'}`}>
                   <span>{t.flag_emoji}</span>
                   <span className={`truncate text-xs ${isTaken ? 'line-through' : ''}`}>{t.name}</span>
+                  {t.group_name && <span className="text-[10px] text-[var(--text-muted)] shrink-0">{t.group_name}</span>}
                   <span className="ml-auto text-[var(--accent-glow)]">+</span>
                 </button>
               )
