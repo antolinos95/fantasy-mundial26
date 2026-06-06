@@ -360,9 +360,12 @@ function Input({
   )
 }
 
-// Aviso para instalar como app (iOS Safari no muestra prompt automático)
+// Instalación como app: botón nativo en Android/Chrome (beforeinstallprompt)
+// + instrucciones manuales en iOS Safari (no soporta el prompt).
 function InstallHint() {
-  const [show, setShow] = useState(false)
+  const [deferred, setDeferred] = useState<any>(null)
+  const [showIOS, setShowIOS] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -370,21 +373,61 @@ function InstallHint() {
       // @ts-expect-error iOS Safari
       window.navigator.standalone === true
     if (standalone) return
+
+    if (localStorage.getItem('installHintDismissed')) { setDismissed(true); return }
+
+    // Android / Chrome / Edge: capturar el evento para mostrar botón propio
+    const onPrompt = (e: Event) => { e.preventDefault(); setDeferred(e) }
+    window.addEventListener('beforeinstallprompt', onPrompt)
+
+    // iOS Safari: no hay evento, mostramos instrucciones
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    const dismissed = localStorage.getItem('installHintDismissed')
-    if (isIOS && !dismissed) setShow(true)
+    const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent)
+    if (isIOS && isSafari) setShowIOS(true)
+
+    return () => window.removeEventListener('beforeinstallprompt', onPrompt)
   }, [])
 
-  if (!show) return null
-  return (
-    <div className="w-full max-w-md mb-4 bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3 flex items-start gap-2 text-sm">
-      <span>📲</span>
-      <p className="flex-1 text-[var(--text-secondary)]">
-        Instala la app: pulsa <b className="text-white">Compartir</b> ⎋ y luego{' '}
-        <b className="text-white">Añadir a pantalla de inicio</b> ➕
-      </p>
-      <button onClick={() => { localStorage.setItem('installHintDismissed', '1'); setShow(false) }}
-        className="text-[var(--text-secondary)] hover:text-white">✕</button>
-    </div>
-  )
+  async function install() {
+    if (!deferred) return
+    deferred.prompt()
+    await deferred.userChoice
+    setDeferred(null)
+  }
+
+  function close() {
+    localStorage.setItem('installHintDismissed', '1')
+    setDeferred(null); setShowIOS(false); setDismissed(true)
+  }
+
+  if (dismissed) return null
+
+  // Botón de instalación (Android/desktop)
+  if (deferred) {
+    return (
+      <div className="w-full max-w-md mb-4 bg-[var(--accent)]/10 border border-[var(--accent)]/40 rounded-xl px-4 py-3 flex items-center gap-3">
+        <span className="text-xl">📲</span>
+        <p className="flex-1 text-sm">Instala Fantasy Mundial como app</p>
+        <button onClick={install}
+          className="px-3 py-1.5 bg-[var(--accent)] text-white text-sm font-bold rounded-lg">Instalar</button>
+        <button onClick={close} className="text-[var(--text-secondary)] hover:text-white">✕</button>
+      </div>
+    )
+  }
+
+  // Instrucciones iOS
+  if (showIOS) {
+    return (
+      <div className="w-full max-w-md mb-4 bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3 flex items-start gap-2 text-sm">
+        <span>📲</span>
+        <p className="flex-1 text-[var(--text-secondary)]">
+          Instala la app: pulsa <b className="text-white">Compartir</b> ⎋ y luego{' '}
+          <b className="text-white">Añadir a pantalla de inicio</b> ➕
+        </p>
+        <button onClick={close} className="text-[var(--text-secondary)] hover:text-white">✕</button>
+      </div>
+    )
+  }
+
+  return null
 }
