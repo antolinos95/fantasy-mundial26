@@ -79,17 +79,22 @@ export async function GET(req: NextRequest) {
 
   // 1. Obtener partidos IN_PLAY y FINISHED de hoy en el Mundial
   const today = new Date().toISOString().slice(0, 10)
-  const fdRes = await fetch(
-    `${FD_BASE}/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=IN_PLAY,PAUSED,FINISHED,EXTRA_TIME,PENALTY_SHOOTOUT`,
-    { headers: { 'X-Auth-Token': FD_KEY } }
-  )
 
-  if (!fdRes.ok) {
-    return NextResponse.json({ error: 'football-data API error', status: fdRes.status }, { status: 502 })
+  const [liveRes, finishedRes] = await Promise.all([
+    fetch(`${FD_BASE}/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=LIVE`,
+      { headers: { 'X-Auth-Token': FD_KEY } }),
+    fetch(`${FD_BASE}/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=FINISHED`,
+      { headers: { 'X-Auth-Token': FD_KEY } }),
+  ])
+
+  if (!liveRes.ok && !finishedRes.ok) {
+    const body = await liveRes.text()
+    return NextResponse.json({ error: 'football-data API error', status: liveRes.status, body }, { status: 502 })
   }
 
-  const fdData = await fdRes.json()
-  const fdMatches: any[] = fdData.matches ?? []
+  const liveData     = liveRes.ok     ? await liveRes.json()     : { matches: [] }
+  const finishedData = finishedRes.ok ? await finishedRes.json() : { matches: [] }
+  const fdMatches: any[] = [...(liveData.matches ?? []), ...(finishedData.matches ?? [])]
 
   if (fdMatches.length === 0) {
     return NextResponse.json({ message: 'No matches today', synced: 0 })
