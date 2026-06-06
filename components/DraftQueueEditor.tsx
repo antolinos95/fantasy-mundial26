@@ -16,6 +16,7 @@ export default function DraftQueueEditor({
   const [teams, setTeams]   = useState<Team[]>([])
   const [queue, setQueue]   = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'alpha' | 'group'>('alpha')
   const [saved, setSaved]   = useState(false)
   const [loaded, setLoaded] = useState(false)
 
@@ -56,8 +57,12 @@ export default function DraftQueueEditor({
 
   const taken = new Set(takenTeamIds)
   const teamById = Object.fromEntries(teams.map(t => [t.id, t]))
-  const available = teams.filter(t => !queue.includes(t.id) &&
-    t.name.toLowerCase().includes(search.toLowerCase()))
+  const available = teams
+    .filter(t => !queue.includes(t.id) && t.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => sortBy === 'group'
+      ? (a.group_name ?? '').localeCompare(b.group_name ?? '') || a.name.localeCompare(b.name, 'es')
+      : a.name.localeCompare(b.name, 'es')
+    )
 
   const edit = (fn: (q: string[]) => string[]) => { setUserEdited(true); setQueue(fn) }
   const add = (id: string) => edit(q => [...q, id])
@@ -87,26 +92,6 @@ export default function DraftQueueEditor({
             Ordena tus selecciones favoritas. Si no eliges a tiempo en tu turno, se cogerá la primera de esta lista que siga libre.
           </p>
 
-          {/* Ordenación rápida */}
-          {queue.length > 0 && (
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => edit(q => [...q].sort((a, b) => (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')))}
-                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-white transition-colors">
-                A → Z
-              </button>
-              <button
-                onClick={() => edit(q => [...q].sort((a, b) => {
-                  const ga = teamById[a]?.group_name ?? ''
-                  const gb = teamById[b]?.group_name ?? ''
-                  return ga.localeCompare(gb) || (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')
-                }))}
-                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-white transition-colors">
-                Por grupo
-              </button>
-            </div>
-          )}
-
           {/* Cola ordenada */}
           {queue.length > 0 && (
             <div className="space-y-1.5 mb-3">
@@ -131,8 +116,18 @@ export default function DraftQueueEditor({
           )}
 
           {/* Disponibles para añadir */}
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar selección…"
-            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] mb-2" />
+          <div className="flex gap-2 mb-2">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar selección…"
+              className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]" />
+            <button onClick={() => setSortBy('alpha')}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${sortBy === 'alpha' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-white'}`}>
+              A→Z
+            </button>
+            <button onClick={() => setSortBy('group')}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${sortBy === 'group' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-white'}`}>
+              Grupo
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto">
             {available.map(t => {
               const isTaken = taken.has(t.id)
