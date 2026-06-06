@@ -14,6 +14,16 @@ export default function PushSubscribeButton() {
       setState('unsupported')
       return
     }
+    // En iOS, Web Push solo funciona instalada como PWA
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      // @ts-expect-error iOS Safari
+      window.navigator.standalone === true
+    if (isIOS && !isStandalone) {
+      setState('unsupported')
+      return
+    }
     if (Notification.permission === 'denied') { setState('denied'); return }
 
     navigator.serviceWorker.ready.then((reg) =>
