@@ -24,6 +24,7 @@ export default function DraftQueueEditor({
       supabase.from('teams').select('*').order('group_name').order('name'),
       supabase.from('draft_queue').select('team_id, rank').eq('player_id', playerId).order('rank'),
     ]).then(([tRes, qRes]) => {
+      console.log('DraftQueue load — playerId:', playerId, 'queue:', qRes.data, 'error:', qRes.error)
       setTeams(tRes.data ?? [])
       setQueue((qRes.data ?? []).map(r => r.team_id))
       setLoaded(true)
