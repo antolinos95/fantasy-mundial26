@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, setPlayerId, DEFAULT_PLAYER_IMG } from '../../../lib/supabase'
 import type { League, Player, Team, DraftOrder, DraftState, DraftedTeam, SquadPlayer } from '../../../types'
+import DraftQueueEditor from '../../../components/DraftQueueEditor'
 
 export default function DraftClient({
   league,
@@ -96,6 +97,39 @@ export default function DraftClient({
 const isFinished =
   draftState?.finished ?? false
 
+  // ── Temporizador / autopick ──
+  const timerSecs = league.draft_timer_seconds ?? 0
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  const lastAutopickRef = useRef<number>(-1)
+
+  useEffect(() => {
+    if (!timerSecs || isFinished) return
+    const id = setInterval(() => setNowTs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [timerSecs, isFinished])
+
+  const turnStart  = draftState?.turn_started_at ? new Date(draftState.turn_started_at).getTime() : null
+  const deadline   = turnStart && timerSecs ? turnStart + timerSecs * 1000 : null
+  const remainingMs = deadline ? deadline - nowTs : null
+
+  useEffect(() => {
+    if (!timerSecs || isFinished || !draftState || remainingMs === null) return
+    if (remainingMs <= 0 && lastAutopickRef.current !== draftState.current_pick) {
+      lastAutopickRef.current = draftState.current_pick
+      supabase.rpc('autopick_if_expired', { p_league_id: league.id })
+    }
+  }, [remainingMs, timerSecs, isFinished, draftState, league.id])
+
+  function fmtRemaining(ms: number) {
+    if (ms <= 0) return '0s'
+    const s = Math.floor(ms / 1000)
+    if (s < 60) return `${s}s`
+    const m = Math.floor(s / 60)
+    if (m < 60) return `${m}m ${s % 60}s`
+    const h = Math.floor(m / 60)
+    return `${h}h ${m % 60}m`
+  }
+
   async function pickTeam(teamId: string) {
     if (!isMyTurn || picking || !draftState) return
     setPicking(true)
@@ -121,6 +155,7 @@ const draftCompleted =
     const zp = nextPick - 1
     const nextRound = Math.floor(zp / n) + 1
 
+    const now = new Date().toISOString()
     // Comprobar si el draft termina
     if (draftCompleted) {
   await supabase
@@ -129,6 +164,7 @@ const draftCompleted =
       current_pick: nextPick,
       round: nextRound,
       finished: true,
+      turn_started_at: now,
     })
     .eq('league_id', league.id)
 
@@ -140,7 +176,7 @@ const draftCompleted =
     .eq('id', league.id)
 } else {
       await supabase.from('draft_state')
-        .update({ current_pick: nextPick, round: nextRound })
+        .update({ current_pick: nextPick, round: nextRound, turn_started_at: now })
         .eq('league_id', league.id)
     }
 
@@ -173,10 +209,22 @@ const draftCompleted =
                 {isMyTurn ? '¡Tu turno! Elige una selección' : `Elige: ${currentPlayer?.name ?? '...'}`}
               </p>
             </div>
-            {isMyTurn && <span className="text-2xl">👆</span>}
+            {remainingMs !== null
+              ? <span className={`font-black tabular-nums text-lg ${remainingMs < 30000 ? 'text-[var(--red)]' : 'text-[var(--text-secondary)]'}`}>
+                  ⏱ {fmtRemaining(remainingMs)}
+                </span>
+              : isMyTurn && <span className="text-2xl">👆</span>}
           </div>
         )}
       </div>
+
+      {/* Editar mi cola durante el draft */}
+      {myId && !isFinished && (
+        <DraftQueueEditor
+          leagueId={league.id} playerId={myId}
+          takenTeamIds={[...pickedTeamIds]}
+        />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Columna izquierda: picks disponibles */}

@@ -182,7 +182,7 @@ export default function Home() {
         <p className="mt-2 text-[var(--text-secondary)]">Fantasy Mundial 2026</p>
         <button onClick={() => setShowRules(true)}
           className="mt-4 inline-flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl px-4 py-2 text-sm font-semibold transition-colors">
-          📖 Ver normas
+          ❓ FAQ / Cómo jugar
         </button>
       </div>
 

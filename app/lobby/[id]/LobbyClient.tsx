@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import type { League, Player } from '../../../types'
+import DraftQueueEditor from '../../../components/DraftQueueEditor'
 
 export default function LobbyClient({
   league,
@@ -17,12 +18,18 @@ export default function LobbyClient({
   const [isAdmin, setIsAdmin] = useState(false)
   const [starting, setStarting] = useState(false)
   const [autoRunning, setAutoRunning] = useState(false)
+  const [timerOption, setTimerOption] = useState<number>(league.draft_timer_seconds ?? 120)
+  const [myId, setMyId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setIsAdmin(user.id === league.admin_user_id)
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      setIsAdmin(user.id === league.admin_user_id)
+      const { data: player } = await supabase.from('players').select('id')
+        .eq('league_id', league.id).eq('user_id', user.id).maybeSingle()
+      if (player) setMyId(player.id)
     })
-  }, [league.admin_user_id])
+  }, [league.admin_user_id, league.id])
 
   // Realtime: escuchar nuevos jugadores
   useEffect(() => {
@@ -77,11 +84,14 @@ export default function LobbyClient({
       finished: false,
       direction: 1,
       teams_per_player: teamsPerPlayer,
+      turn_started_at: new Date().toISOString(),
     }, { onConflict: 'league_id' })
     if (stateErr) { alert(stateErr.message); setStarting(false); return }
 
-    // Cambiar status de la liga → redirigirá via realtime a todos
-    await supabase.from('leagues').update({ status: 'drafting' }).eq('id', league.id)
+    // Guardar el timer elegido + cambiar status → redirige via realtime
+    await supabase.from('leagues')
+      .update({ status: 'drafting', draft_timer_seconds: timerOption || null })
+      .eq('id', league.id)
     router.push(`/draft/${league.id}`)
   }
 
@@ -190,6 +200,29 @@ export default function LobbyClient({
           Esperando jugadores — comparte el código para invitar
         </div>
 
+        {/* Preparar mi draft (todos los jugadores) */}
+        {myId && <DraftQueueEditor leagueId={league.id} playerId={myId} />}
+
+        {/* Timer del draft (solo admin) */}
+        {isAdmin && (
+          <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4 mb-4">
+            <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1">⏱ Tipo de draft</p>
+            <p className="text-xs text-[var(--text-secondary)] mb-3">Con tiempo: si se acaba el turno, se elige tu primera preferencia disponible. Libre: sin límite.</p>
+            <div className="grid grid-cols-4 gap-2">
+              {[[0,'Libre'],[120,'2 min'],[3600,'1 h'],[86400,'24 h']].map(([secs, lbl]) => (
+                <button key={secs} onClick={() => setTimerOption(secs as number)}
+                  className={`py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                    timerOption === secs
+                      ? 'bg-[var(--accent)] border-[var(--accent)] text-white'
+                      : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-white'
+                  }`}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Start button (only admin) */}
         {isAdmin && (
           <div className="space-y-3">
@@ -218,3 +251,4 @@ export default function LobbyClient({
     </main>
   )
 }
+

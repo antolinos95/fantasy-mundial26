@@ -14,6 +14,9 @@ type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'admin'
 const STAGE_LABELS: Record<string, string> = { r16: 'Octavos', qf: 'Cuartos', sf: 'Semifinal', final: 'Final' }
 const STAGE_PTS:   Record<string, number>  = { r16: 1, qf: 3, sf: 5, final: 8 }
 
+const LOCK_BEFORE_MS = 2 * 60 * 60 * 1000   // se bloquea 2h antes
+const REMIND_FROM_MS = 24 * 60 * 60 * 1000  // recordatorio desde 24h antes
+
 const EVENT_LABELS: Record<string, string> = {
   goal: '⚽ Gol (reglamentario)',
   goal_extra_time: '⚽ Gol (prórroga)',
@@ -43,6 +46,7 @@ export default function StandingsClient({
   const [liveScores, setLiveScores] = useState<Score[]>(scores)
   const [liveMatches, setLiveMatches] = useState<Match[]>(matches)
   const [showRules, setShowRules]   = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -85,13 +89,28 @@ export default function StandingsClient({
           <p className="text-[var(--text-secondary)] text-xs uppercase tracking-widest">{league.code}</p>
           <h1 className="text-2xl font-black">{league.name}</h1>
         </div>
-        <button onClick={() => setShowRules(true)}
-          className="shrink-0 mt-1 flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl px-3 py-2 text-sm font-semibold transition-colors">
-          📖 Normas
-        </button>
+        <div className="flex gap-2 shrink-0 mt-1">
+          <button onClick={() => setShowRules(true)}
+            className="flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl px-3 py-2 text-sm font-semibold transition-colors">
+            ❓ FAQ
+          </button>
+          <button onClick={() => setShowSettings(true)}
+            className="flex items-center justify-center bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] rounded-xl w-10 py-2 text-sm transition-colors">
+            ⚙️
+          </button>
+        </div>
       </div>
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showSettings && myId && (
+        <PlayerSettingsModal
+          leagueId={league.id} playerId={myId}
+          currentName={players.find(p => p.id === myId)?.name ?? ''}
+          isAdmin={isAdmin}
+          onClose={() => setShowSettings(false)}
+          onLeft={() => router.push('/')}
+        />
+      )}
 
       <div className="flex gap-1 bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl p-1 mb-6 overflow-x-auto">
         {tabs.map(t => (
@@ -160,6 +179,8 @@ function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; pl
           goals:     Number(d.goals)     ?? 0,
           own_goals: Number(d.own_goals) ?? 0,
           red_cards: Number(d.red_cards) ?? 0,
+          flag:      d.flag_emoji,
+          photo_url: d.photo_url,
         })))
       })
   }, [leagueId])
@@ -221,7 +242,11 @@ function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; pl
         {topScorers.map((s, i) => (
           <div key={s.squad_player_id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] last:border-0">
             <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
-            <span className="text-lg">{s.flag}</span>
+            <div className="relative shrink-0">
+              <img src={s.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-9 h-9 rounded-full object-cover bg-[var(--bg-elevated)]"
+                onError={ev => { (ev.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
+              <span className="absolute -bottom-1 -right-1 text-xs">{s.flag}</span>
+            </div>
             <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
             <div className="flex items-center gap-2 text-xs">
               <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full">⚽ {s.goals}</span>
@@ -361,6 +386,7 @@ interface PlayerStat {
   red_cards: number
   team_name?: string
   flag?: string
+  photo_url?: string | null
 }
 
 function TeamSquadExpand({ teamId, pickNumber, leagueId }: { teamId: string; pickNumber: number; leagueId: string }) {
@@ -750,7 +776,7 @@ function MatchesTab({
   async function saveLineup(matchId: string, teamId: string) {
     if (!myId || !myTeamIds.includes(teamId)) return
     const match = matches.find(m => m.id === matchId)
-    if (match && hasStarted(match)) { alert('El partido ya ha empezado'); return }
+    if (match && isLocked(match)) { alert('Cerrado: el partido empieza en menos de 2 horas'); return }
     const key = `${matchId}-${teamId}`
     const selected = lineups[key] ?? []
     setSavingLineup(key)
@@ -768,7 +794,7 @@ function MatchesTab({
   async function submitPrediction(matchId: string) {
     if (!myId) return
     const match = matches.find(m => m.id === matchId)
-    if (match && hasStarted(match)) { alert('El partido ya ha empezado'); return }
+    if (match && isLocked(match)) { alert('Cerrado: el partido empieza en menos de 2 horas'); return }
     const h = parseInt(localGoals[matchId] ?? '')
     const a = parseInt(visitorGoals[matchId] ?? '')
     if (isNaN(h) || isNaN(a)) { alert('Introduce goles válidos'); return }
@@ -787,13 +813,15 @@ function MatchesTab({
     return dt?.player?.name ?? null
   }
 
-  function hasStarted(match: Match) {
-    return !!match.match_date && new Date(match.match_date).getTime() <= Date.now()
+  // Se bloquea 2h antes del inicio del partido
+  function isLocked(match: Match) {
+    if (!match.match_date) return false
+    return new Date(match.match_date).getTime() - LOCK_BEFORE_MS <= Date.now()
   }
 
   function canInteract(match: Match) {
     if (!myId || match.status !== 'scheduled') return false
-    if (hasStarted(match)) return false  // bloqueado al empezar el partido
+    if (isLocked(match)) return false
     return myTeamIds.includes(match.home_team_id ?? '') || myTeamIds.includes(match.away_team_id ?? '')
   }
 
@@ -808,8 +836,39 @@ function MatchesTab({
   const myMatches    = pendingMy.slice(0, visibleMy)
   const otherMatches = allOtherMatches.slice(0, visibleOther)
 
+  // Recordatorios: partidos en ventana 24h–2h sin porra o sin alineación completa
+  const reminders = pendingMy.filter(m => {
+    if (!m.match_date) return false
+    const start = new Date(m.match_date).getTime()
+    const now = Date.now()
+    if (start - LOCK_BEFORE_MS <= now) return false   // ya bloqueado
+    if (start - REMIND_FROM_MS > now) return false    // aún falta más de 24h
+    const noPorra = !predictions.find(p => p.match_id === m.id)
+    const myTeamsHere = myTeamIds.filter(id => id === m.home_team_id || id === m.away_team_id)
+    const noLineup = myTeamsHere.some(tid => (lineups[`${m.id}-${tid}`]?.length ?? 0) < 3)
+    return noPorra || noLineup
+  })
+
   return (
     <div className="space-y-8">
+      {/* Recordatorios */}
+      {reminders.length > 0 && (
+        <div className="bg-[var(--yellow)]/10 border border-[var(--yellow)]/40 rounded-2xl p-4">
+          <p className="text-sm font-bold text-[var(--yellow)] mb-1">⏰ Tienes {reminders.length} partido{reminders.length > 1 ? 's' : ''} sin completar</p>
+          <p className="text-xs text-[var(--text-secondary)] mb-2">Envía porra y jugadores antes de 2h previas al inicio.</p>
+          <div className="space-y-1">
+            {reminders.map(m => (
+              <p key={m.id} className="text-xs flex items-center gap-2">
+                <span>{m.home_team?.flag_emoji} {m.home_team?.name} vs {m.away_team?.name} {m.away_team?.flag_emoji}</span>
+                <span className="text-[var(--text-secondary)] ml-auto">
+                  {m.match_date && new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mis partidos */}
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -871,9 +930,9 @@ function MatchesTab({
                     )}
 
                     {/* Aviso de bloqueo */}
-                    {m.status === 'scheduled' && hasStarted(m) && (
+                    {m.status === 'scheduled' && isLocked(m) && (
                       <p className="text-xs text-center text-[var(--yellow)] mb-3">
-                        🔒 El partido ha empezado — porra y alineación bloqueadas
+                        🔒 Cerrado — la porra y la alineación se bloquean 2h antes del partido
                       </p>
                     )}
 
@@ -1233,15 +1292,14 @@ function MundialTab({ matches }: { matches: Match[] }) {
       )}
       {view === 'knockout' && knockoutMatches.length > 0 && (
         <>
-          {hasGroupResults && (
-            <p className="text-xs text-center text-[var(--text-secondary)]">
-              Cruces proyectados según la clasificación actual · los terceros son aproximados
-            </p>
-          )}
+          <p className="text-xs text-center text-[var(--text-secondary)]">
+            {hasGroupResults
+              ? 'Cruces proyectados según la clasificación actual · los terceros son aproximados'
+              : 'Cruces preliminares según las posiciones provisionales de los grupos'}
+          </p>
           <KnockoutBracket
             knockoutMatches={knockoutMatches}
             slotResolution={slotResolution}
-            hasGroupResults={hasGroupResults}
           />
         </>
       )}
@@ -1255,10 +1313,9 @@ function teamShort(t: { name: string; fifa_code?: string | null }) {
   return t.fifa_code ?? t.name.slice(0, 3).toUpperCase()
 }
 
-function KnockoutBracket({ knockoutMatches, slotResolution, hasGroupResults }: {
+function KnockoutBracket({ knockoutMatches, slotResolution }: {
   knockoutMatches: Match[]
   slotResolution: Record<string, { name: string; flag_emoji: string; fifa_code?: string | null } | null>
-  hasGroupResults: boolean
 }) {
   const columns: { key: string; label: string }[] = [
     { key: 'r32',   label: 'Ronda de 32' },
@@ -1286,8 +1343,8 @@ function KnockoutBracket({ knockoutMatches, slotResolution, hasGroupResults }: {
   }
 
   function MatchCard({ m }: { m: Match }) {
-    const projHome = hasGroupResults && m.slot_home ? slotResolution[m.slot_home] : null
-    const projAway = hasGroupResults && m.slot_away ? slotResolution[m.slot_away] : null
+    const projHome = m.slot_home ? slotResolution[m.slot_home] : null
+    const projAway = m.slot_away ? slotResolution[m.slot_away] : null
     const home = m.home_team ?? projHome
     const away = m.away_team ?? projAway
     const finished = m.status === 'finished'
@@ -1319,18 +1376,17 @@ function KnockoutBracket({ knockoutMatches, slotResolution, hasGroupResults }: {
               <div className="flex flex-col justify-around gap-2 flex-1">
                 {roundMatches.map(m => <MatchCard key={m.id} m={m} />)}
               </div>
+              {/* 3er y 4º puesto, bajo la Final */}
+              {key === 'final' && thirdMatch && (
+                <div className="mt-4">
+                  <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 text-center">3.er puesto</p>
+                  <MatchCard m={thirdMatch} />
+                </div>
+              )}
             </div>
           )
         })}
       </div>
-
-      {/* Tercer puesto */}
-      {thirdMatch && (
-        <div className="mt-4 flex flex-col items-start">
-          <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Tercer puesto</p>
-          <MatchCard m={thirdMatch} />
-        </div>
-      )}
     </div>
   )
 }
@@ -1389,8 +1445,139 @@ function AdminTab({ league, matches, players, router }: {
         collapsible
       />
 
+      {/* Asignar cruces eliminatorios */}
+      <KnockoutAssignSection matches={matches} allTeams={allTeams} onRefresh={() => router.refresh()} />
+
       {/* Bonificaciones de clasificación */}
       <QualificationBonusSection allTeams={allTeams} onAward={awardBonus} />
+    </div>
+  )
+}
+
+// ─── ASIGNAR EQUIPOS A LAS ELIMINATORIAS ─────────────────────
+
+function KnockoutAssignSection({ matches, allTeams, onRefresh }: {
+  matches: Match[]
+  allTeams: import('../../../types').Team[]
+  onRefresh: () => void
+}) {
+  const [open, setOpen]   = useState(false)
+  const [busy, setBusy]   = useState(false)
+  const ROUNDS: { key: string; label: string }[] = [
+    { key: 'r32', label: 'Ronda de 32' }, { key: 'r16', label: 'Octavos' },
+    { key: 'qf', label: 'Cuartos' }, { key: 'sf', label: 'Semifinales' },
+    { key: 'third', label: 'Tercer puesto' }, { key: 'final', label: 'Final' },
+  ]
+  const koMatches = matches.filter(m => m.match_type && m.match_type !== 'group')
+  if (!koMatches.length) return null
+
+  // Clasificación final de grupos
+  function computeGroupRanking() {
+    const map: Record<string, { team: any; pts: number; gd: number; gf: number }> = {}
+    for (const t of allTeams) map[t.id] = { team: t, pts: 0, gd: 0, gf: 0 }
+    for (const m of matches) {
+      if (m.match_type !== 'group' || m.status !== 'finished' || m.home_goals == null) continue
+      const h = map[m.home_team_id ?? ''], a = map[m.away_team_id ?? '']
+      if (!h || !a) continue
+      h.gf += m.home_goals; h.gd += m.home_goals - m.away_goals!
+      a.gf += m.away_goals!; a.gd += m.away_goals! - m.home_goals
+      if (m.home_goals > m.away_goals!) h.pts += 3
+      else if (m.home_goals === m.away_goals!) { h.pts++; a.pts++ }
+      else a.pts += 3
+    }
+    const byGroup: Record<string, any[]> = {}
+    for (const row of Object.values(map)) {
+      const g = row.team.group_name ?? '?'
+      ;(byGroup[g] ??= []).push(row)
+    }
+    for (const g of Object.keys(byGroup))
+      byGroup[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf)
+    return byGroup
+  }
+
+  async function autofillR32() {
+    if (!confirm('¿Auto-rellenar la Ronda de 32 con la clasificación ACTUAL de grupos?')) return
+    setBusy(true)
+    const byGroup = computeGroupRanking()
+    const thirds = Object.entries(byGroup).map(([g, rows]) => rows[2] ? { g, row: rows[2] } : null)
+      .filter(Boolean).sort((a: any, b: any) => b.row.pts - a.row.pts || b.row.gd - a.row.gd) as any[]
+    const avail = [...thirds]
+    function resolve(slot: string | null): string | null {
+      if (!slot) return null
+      const m1 = slot.match(/^([12])([A-L])$/)
+      if (m1) { const rows = byGroup[m1[2]]; const r = rows?.[m1[1] === '1' ? 0 : 1]; return r?.team.id ?? null }
+      const m3 = slot.match(/3º\(([A-L/]+)\)/)
+      if (m3) {
+        const cands = m3[1].split('/')
+        const idx = avail.findIndex(t => cands.includes(t.g))
+        if (idx === -1) return null
+        return avail.splice(idx, 1)[0].row.team.id
+      }
+      return null
+    }
+    const r32 = koMatches.filter(m => m.match_type === 'r32')
+      .sort((a, b) => (a.match_date ?? '').localeCompare(b.match_date ?? ''))
+    for (const m of r32) {
+      await supabase.from('matches').update({
+        home_team_id: resolve(m.slot_home), away_team_id: resolve(m.slot_away),
+      }).eq('id', m.id)
+    }
+    setBusy(false)
+    onRefresh()
+  }
+
+  async function assign(matchId: string, side: 'home' | 'away', teamId: string) {
+    await supabase.from('matches')
+      .update({ [side === 'home' ? 'home_team_id' : 'away_team_id']: teamId || null })
+      .eq('id', matchId)
+    onRefresh()
+  }
+
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--bg-elevated)] transition-colors">
+        <span className="font-bold text-sm">🏆 Asignar cruces eliminatorios</span>
+        <span className="text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 border-t border-[var(--border)] pt-3 space-y-4">
+          <button onClick={autofillR32} disabled={busy}
+            className="w-full py-2.5 bg-[var(--yellow)] text-black font-bold rounded-xl disabled:opacity-50 text-sm">
+            {busy ? 'Asignando…' : '⚡ Auto-rellenar R32 desde la clasificación de grupos'}
+          </button>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Para octavos en adelante, asigna los ganadores manualmente a medida que avancen las rondas.
+          </p>
+          {ROUNDS.map(({ key, label }) => {
+            const rms = koMatches.filter(m => m.match_type === key)
+              .sort((a, b) => (a.match_date ?? '').localeCompare(b.match_date ?? ''))
+            if (!rms.length) return null
+            return (
+              <div key={key}>
+                <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{label}</p>
+                <div className="space-y-2">
+                  {rms.map(m => (
+                    <div key={m.id} className="flex items-center gap-1.5 text-xs">
+                      <select value={m.home_team_id ?? ''} onChange={e => assign(m.id, 'home', e.target.value)}
+                        className="flex-1 min-w-0 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-1.5 py-1.5 text-white">
+                        <option value="">{m.slot_home ?? '—'}</option>
+                        {allTeams.map(t => <option key={t.id} value={t.id}>{t.flag_emoji} {t.name}</option>)}
+                      </select>
+                      <span className="text-[var(--text-secondary)] shrink-0">vs</span>
+                      <select value={m.away_team_id ?? ''} onChange={e => assign(m.id, 'away', e.target.value)}
+                        className="flex-1 min-w-0 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-1.5 py-1.5 text-white">
+                        <option value="">{m.slot_away ?? '—'}</option>
+                        {allTeams.map(t => <option key={t.id} value={t.id}>{t.flag_emoji} {t.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -1728,6 +1915,66 @@ function QualificationBonusSection({ allTeams, onAward }: {
           className="w-full py-2.5 bg-[var(--yellow)] text-black font-bold rounded-xl disabled:opacity-40">
           Otorgar bonificación
         </button>
+      </div>
+    </div>
+  )
+}
+
+function PlayerSettingsModal({ leagueId, playerId, currentName, isAdmin, onClose, onLeft }: {
+  leagueId: string
+  playerId: string
+  currentName: string
+  isAdmin: boolean
+  onClose: () => void
+  onLeft: () => void
+}) {
+  const [name, setName]   = useState(currentName)
+  const [saving, setSaving] = useState(false)
+
+  async function saveName() {
+    if (!name.trim() || name.trim() === currentName) return
+    setSaving(true)
+    await supabase.from('players').update({ name: name.trim() }).eq('id', playerId)
+    setSaving(false)
+    onClose()
+    location.reload()
+  }
+
+  async function leaveLeague() {
+    if (isAdmin) { alert('El admin no puede salir. Pasa antes la administración o elimina la liga.'); return }
+    if (!confirm('¿Seguro que quieres salir de esta liga? Perderás tus selecciones y puntos.')) return
+    await supabase.from('players').delete().eq('id', playerId)
+    onLeft()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)]">
+          <p className="font-black text-lg">⚙️ Ajustes</p>
+          <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">Tu nombre en esta liga</label>
+            <div className="flex gap-2">
+              <input value={name} onChange={e => setName(e.target.value)}
+                className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-[var(--accent)]" />
+              <button onClick={saveName} disabled={saving || !name.trim() || name.trim() === currentName}
+                className="px-4 bg-[var(--accent)] text-white font-bold rounded-xl disabled:opacity-40">
+                {saving ? '…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border)] pt-4">
+            <button onClick={leaveLeague}
+              className="w-full py-2.5 border border-[var(--red)]/50 text-[var(--red)] font-semibold rounded-xl hover:bg-[var(--red)]/10 transition-colors">
+              Salir de la liga
+            </button>
+            {isAdmin && <p className="text-xs text-[var(--text-secondary)] mt-2 text-center">Eres admin — no puedes salir de tu propia liga.</p>}
+          </div>
+        </div>
       </div>
     </div>
   )

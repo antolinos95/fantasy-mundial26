@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 export default function RulesModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
@@ -8,75 +10,100 @@ export default function RulesModal({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] shrink-0">
           <div className="flex-1">
-            <p className="font-black text-lg">📖 Normas</p>
+            <p className="font-black text-lg">❓ FAQ</p>
             <p className="text-xs text-[var(--text-secondary)]">IT&apos;S FÚTBOL, NOT SOCCER · Fantasy Mundial 2026</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
         </div>
 
         {/* Contenido */}
-        <div className="overflow-y-auto flex-1 px-4 py-4 space-y-5 text-sm">
-          <Section title="📋 ¿Cómo funciona?">
-            <p>Antes del Mundial se hace un <b>draft en serpiente</b> para repartir las selecciones (ronda 1: 1-2-3…, ronda 2: …-3-2-1, y así).</p>
-            <p>El draft termina cuando quedan menos selecciones libres que participantes.</p>
-            <p>⚠️ No se permiten intercambios ni traspasos. Cada selección tiene un único propietario todo el torneo.</p>
-          </Section>
+        <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2">
+          <Faq q="📋 ¿Cómo funciona el juego?" defaultOpen>
+            <p>Un grupo de amigos se reparte las <b>48 selecciones</b> del Mundial 2026 mediante un draft. Cada selección tiene un único propietario durante todo el torneo (no hay traspasos).</p>
+            <p>A lo largo del Mundial ganas puntos por los resultados de tus selecciones, por acertar porras y por los goles de tus jugadores destacados. Gana quien más puntos sume al final.</p>
+          </Faq>
 
-          <Section title="⚽ Puntos por partido">
-            <Bullet>✅ <b>Victoria</b>: +2 puntos</Bullet>
-            <Bullet>🤝 <b>Empate</b>: +1 punto para cada propietario</Bullet>
+          <Faq q="🐍 ¿Cómo es el draft?">
+            <p>Es un <b>draft en serpiente</b>: en la ronda 1 se elige en orden (1-2-3-4…), en la ronda 2 al revés (…-4-3-2-1), y así sucesivamente. El orden inicial es aleatorio.</p>
+            <p>Termina cuando quedan menos selecciones libres que participantes.</p>
+            <p><b>Prepara tu cola:</b> desde que te unes, en la sala de espera puedes ordenar tus selecciones favoritas. También puedes editarla durante el draft.</p>
+          </Faq>
+
+          <Faq q="⏱ ¿Draft con tiempo o libre?">
+            <p>El admin elige antes de empezar:</p>
+            <Bullet><b>Libre</b>: sin límite de tiempo por turno.</Bullet>
+            <Bullet><b>Con tiempo</b> (2 min, 1 h o 24 h): si no eliges antes de que acabe tu turno, el sistema coge automáticamente <b>la primera selección disponible de tu cola</b>.</Bullet>
+            <p>El autopick funciona aunque tengas la app cerrada — ideal si jugáis desde distintas zonas horarias.</p>
+          </Faq>
+
+          <Faq q="⚽ ¿Cómo se puntúa?">
+            <p className="font-semibold">Por resultado del partido:</p>
+            <Bullet>✅ Victoria: +2 puntos</Bullet>
+            <Bullet>🤝 Empate: +1 punto para cada propietario</Bullet>
             <Bullet>Si una selección no tiene dueño, esos puntos no se asignan.</Bullet>
-          </Section>
 
-          <Section title="🎯 Porra del marcador">
-            <p>Antes de cada partido, los dos propietarios implicados predicen el resultado exacto.</p>
-            <Bullet>Si aciertas → <b>robas 1 punto</b> a tu rival.</Bullet>
-            <Bullet>Si ambos aciertan o ambos fallan → no pasa nada.</Bullet>
-          </Section>
+            <p className="font-semibold mt-2">🎯 Porra del marcador:</p>
+            <Bullet>Los dos propietarios predicen el resultado exacto.</Bullet>
+            <Bullet>Si aciertas, <b>robas 1 punto</b> a tu rival.</Bullet>
+            <Bullet>Si ambos aciertan o ambos fallan, no pasa nada.</Bullet>
 
-          <Section title="⭐ Jugadores destacados">
-            <p>Antes de cada partido, cada propietario elige <b>3 jugadores de su propia selección</b>.</p>
+            <p className="font-semibold mt-2">⭐ Jugadores destacados:</p>
+            <Bullet>Eliges 3 jugadores de tu selección por partido.</Bullet>
             <Bullet>⚽ Gol en tiempo reglamentario = +1</Bullet>
             <Bullet>⚽ Gol en prórroga = +0,5</Bullet>
-            <Bullet>⚽ Penalti convertido en tanda = +0,25</Bullet>
-            <Bullet>🟥 Expulsión = −1</Bullet>
-            <Bullet>🥅 Gol en propia = −1</Bullet>
-            <p className="text-[var(--text-secondary)]">Las penalizaciones siempre valen −1 completo.</p>
-          </Section>
+            <Bullet>⚽ Penalti en tanda = +0,25</Bullet>
+            <Bullet>🟥 Expulsión = −1 · 🥅 Gol en propia = −1</Bullet>
 
-          <Section title="🏅 Bonificaciones por clasificación">
-            <p>Acumulativas:</p>
-            <Bullet>Octavos → +1</Bullet>
-            <Bullet>Cuartos → +3</Bullet>
-            <Bullet>Semifinales → +5</Bullet>
-            <Bullet>Finalista → +8</Bullet>
-            <Bullet>Campeón → +17 + los puntos obtenidos en la final</Bullet>
-          </Section>
+            <p className="font-semibold mt-2">🏅 Bonificaciones por clasificación (acumulativas):</p>
+            <Bullet>Octavos +1 · Cuartos +3 · Semifinales +5 · Final +8</Bullet>
+            <Bullet>Campeón: +17 + los puntos que sume en la final</Bullet>
+          </Faq>
 
-          <Section title="🏆 Clasificación final">
-            <p>Se suman: resultados de los partidos + puntos robados en porras + jugadores destacados + bonificaciones. Gana quien tenga más puntos al terminar el Mundial.</p>
-          </Section>
-
-          <Section title="🤝 Desempates">
+          <Faq q="🤝 ¿Y si hay empate a puntos?">
+            <p>Se desempata por, en este orden:</p>
             <Bullet>1️⃣ Más porras acertadas</Bullet>
             <Bullet>2️⃣ Más puntos por jugadores destacados</Bullet>
             <Bullet>3️⃣ Más victorias de sus selecciones</Bullet>
-          </Section>
+            <p>Puedes tocar a cualquier jugador de la tabla para ver el <b>desglose</b> de sus puntos.</p>
+          </Faq>
 
-          <Section title="📅 Importante">
-            <p>La elección de los 3 jugadores destacados y la porra deben enviarse <b>el día anterior</b> a cada partido. Una vez empieza el partido, no se pueden modificar.</p>
-          </Section>
+          <Faq q="📅 ¿Hasta cuándo puedo poner porra y jugadores?">
+            <p>La porra y los 3 jugadores destacados se envían el día anterior al partido.</p>
+            <Bullet>Se <b>bloquean 2 horas antes</b> del inicio. Después no se pueden cambiar.</Bullet>
+            <Bullet>Recibirás un aviso en la pestaña Partidos de los encuentros sin completar (entre 24h y 2h antes).</Bullet>
+          </Faq>
+
+          <Faq q="🌍 ¿Cómo veo las fases del Mundial?">
+            <p>En la pestaña <b>Mundial</b> tienes dos vistas:</p>
+            <Bullet><b>Fase de grupos</b>: las 12 tablas con puntos, diferencia de goles y clasificados.</Bullet>
+            <Bullet><b>Eliminatorias</b>: el cuadro en formato diagrama (de Ronda de 32 a la Final). Hasta que terminen los grupos, los cruces se muestran <b>proyectados</b> según las posiciones provisionales.</Bullet>
+          </Faq>
+
+          <Faq q="🛠 ¿Qué puedo hacer en la app?">
+            <Bullet><b>Mis equipos</b>: ver tus selecciones y sus plantillas (con fotos y estadísticas). También las de otros jugadores.</Bullet>
+            <Bullet><b>Partidos</b>: pestañas de pendientes (poner porra/jugadores) y finalizados (resumen de tu porra y tus jugadores).</Bullet>
+            <Bullet><b>Tabla</b>: clasificación con desglose de puntos y top goleadores.</Bullet>
+            <Bullet><b>Ajustes</b> (⚙️): cambiar tu nombre o salir de la liga.</Bullet>
+            <Bullet>El <b>admin</b> introduce resultados, eventos de jugadores, asigna los cruces eliminatorios y otorga las bonificaciones.</Bullet>
+          </Faq>
         </div>
       </div>
     </div>
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Faq({ q, children, defaultOpen = false }: { q: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
-    <div>
-      <h3 className="font-bold mb-1.5">{title}</h3>
-      <div className="space-y-1.5 text-[var(--text-primary)]">{children}</div>
+    <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-[var(--bg-elevated)] transition-colors">
+        <span className="font-bold text-sm">{q}</span>
+        <span className="text-[var(--text-secondary)] text-xs shrink-0">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 space-y-1.5 text-sm text-[var(--text-primary)]">{children}</div>
+      )}
     </div>
   )
 }

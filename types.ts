@@ -5,6 +5,7 @@ export interface League {
   status: 'waiting' | 'drafting' | 'active'
   admin_player_id: string | null
   admin_user_id: string | null
+  draft_timer_seconds: number | null
   created_at: string
 }
 
@@ -41,6 +42,7 @@ export interface DraftState {
   finished: boolean
   direction: number
   teams_per_player: number
+  turn_started_at: string | null
 }
 
 export interface DraftedTeam {
