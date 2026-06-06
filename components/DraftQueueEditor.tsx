@@ -24,16 +24,17 @@ export default function DraftQueueEditor({
       supabase.from('teams').select('*').order('group_name').order('name'),
       supabase.from('draft_queue').select('team_id, rank').eq('player_id', playerId).order('rank'),
     ]).then(([tRes, qRes]) => {
-      console.log('DraftQueue load — playerId:', playerId, 'queue:', qRes.data, 'error:', qRes.error)
-      setTeams(tRes.data ?? [])
+setTeams(tRes.data ?? [])
       setQueue((qRes.data ?? []).map(r => r.team_id))
       setLoaded(true)
     })
   }, [playerId])
 
-  // Guardar con debounce
+  const [userEdited, setUserEdited] = useState(false)
+
+  // Guardar con debounce — solo si el usuario modificó la cola manualmente
   useEffect(() => {
-    if (!loaded) return
+    if (!loaded || !userEdited) return
     const id = setTimeout(async () => {
       await supabase.from('draft_queue').delete().eq('player_id', playerId)
       if (queue.length) {
@@ -44,16 +45,17 @@ export default function DraftQueueEditor({
       setSaved(true); setTimeout(() => setSaved(false), 1500)
     }, 800)
     return () => clearTimeout(id)
-  }, [queue, leagueId, playerId, loaded])
+  }, [queue, leagueId, playerId, loaded, userEdited])
 
   const taken = new Set(takenTeamIds)
   const teamById = Object.fromEntries(teams.map(t => [t.id, t]))
   const available = teams.filter(t => !queue.includes(t.id) &&
     t.name.toLowerCase().includes(search.toLowerCase()))
 
-  const add = (id: string) => setQueue(q => [...q, id])
-  const remove = (id: string) => setQueue(q => q.filter(x => x !== id))
-  const move = (i: number, dir: -1 | 1) => setQueue(q => {
+  const edit = (fn: (q: string[]) => string[]) => { setUserEdited(true); setQueue(fn) }
+  const add = (id: string) => edit(q => [...q, id])
+  const remove = (id: string) => edit(q => q.filter(x => x !== id))
+  const move = (i: number, dir: -1 | 1) => edit(q => {
     const j = i + dir
     if (j < 0 || j >= q.length) return q
     const c = [...q];[c[i], c[j]] = [c[j], c[i]]; return c
@@ -82,12 +84,12 @@ export default function DraftQueueEditor({
           {queue.length > 1 && (
             <div className="flex gap-2 mb-3">
               <button
-                onClick={() => setQueue(q => [...q].sort((a, b) => (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')))}
+                onClick={() => edit(q => [...q].sort((a, b) => (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')))}
                 className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-white transition-colors">
                 A → Z
               </button>
               <button
-                onClick={() => setQueue(q => [...q].sort((a, b) => {
+                onClick={() => edit(q => [...q].sort((a, b) => {
                   const ga = teamById[a]?.group_name ?? ''
                   const gb = teamById[b]?.group_name ?? ''
                   return ga.localeCompare(gb) || (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')
