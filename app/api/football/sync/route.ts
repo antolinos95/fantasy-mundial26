@@ -187,7 +187,7 @@ async function syncEvents(
   // Borrar eventos previos para re-insertar (idempotente)
   await supabaseAdmin.from('player_events').delete().eq('match_id', matchId)
 
-  const events: { match_id: string; squad_player_id: string; event_type: string }[] = []
+  const events: { match_id: string; squad_player_id: string; event_type: string; minute: number | null }[] = []
 
   for (const goal of goals) {
     const scorerName: string = goal.scorer?.name ?? goal.scorer?.shortName ?? ''
@@ -222,7 +222,7 @@ async function syncEvents(
 
     if (!match) continue
 
-    events.push({ match_id: matchId, squad_player_id: match.id, event_type: eventType })
+    events.push({ match_id: matchId, squad_player_id: match.id, event_type: eventType, minute: minute || null })
   }
 
   // Tarjetas rojas
@@ -241,7 +241,7 @@ async function syncEvents(
     })
 
     if (!match) continue
-    events.push({ match_id: matchId, squad_player_id: match.id, event_type: 'red_card' })
+    events.push({ match_id: matchId, squad_player_id: match.id, event_type: 'red_card', minute: booking.minute || null })
   }
 
   if (events.length > 0) {

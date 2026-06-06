@@ -2097,14 +2097,14 @@ function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId:
       <div className="space-y-0.5">
         {home.map(e => (
           <p key={e.id} className="text-[var(--text-secondary)]">
-            {EVENT_ICON[e.event_type]} {e.squad_player?.name}
+            {EVENT_ICON[e.event_type]} {e.squad_player?.name}{e.minute ? ` ${e.minute}'` : ''}
           </p>
         ))}
       </div>
       <div className="space-y-0.5 text-right">
         {away.map(e => (
           <p key={e.id} className="text-[var(--text-secondary)]">
-            {e.squad_player?.name} {EVENT_ICON[e.event_type]}
+            {e.minute ? `${e.minute}' ` : ''}{e.squad_player?.name} {EVENT_ICON[e.event_type]}
           </p>
         ))}
       </div>
