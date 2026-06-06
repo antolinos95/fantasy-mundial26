@@ -22,7 +22,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_get(
     url := 'https://fantasy-mundial26.vercel.app/api/football/sync',
-    headers := '{"x-push-secret":"fm26_push_secret_Aojansdueho97HS9mhs83"}'::jsonb
+    headers := '{"x-push-secret":"TU_PUSH_SECRET"}'::jsonb
   );
   $$
 );
@@ -34,7 +34,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_get(
     url := 'https://fantasy-mundial26.vercel.app/api/football/sync',
-    headers := '{"x-push-secret":"fm26_push_secret_Aojansdueho97HS9mhs83"}'::jsonb
+    headers := '{"x-push-secret":"TU_PUSH_SECRET"}'::jsonb
   );
   $$
 );
