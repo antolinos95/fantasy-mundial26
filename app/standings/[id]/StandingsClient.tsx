@@ -981,6 +981,11 @@ function MatchesTab({
                       </p>
                     )}
 
+                    {/* Eventos en vivo */}
+                    {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
+                      <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+                    )}
+
                     {/* Aviso de bloqueo */}
                     {m.status === 'scheduled' && isLocked(m) && (
                       <p className="text-xs text-center text-[var(--yellow)] mb-3">
@@ -1162,6 +1167,9 @@ function MatchesTab({
                     </div>
                     <span className="text-lg">{m.away_team?.flag_emoji}</span>
                   </div>
+                  {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
+                    <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+                  )}
                 </div>
               )
             })}
@@ -2044,6 +2052,58 @@ function PlayerSettingsModal({ leagueId, playerId, currentName, isAdmin, onClose
             {isAdmin && <p className="text-xs text-[var(--text-secondary)] mt-2 text-center">Eres admin — no puedes salir de tu propia liga.</p>}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId: string | null }) {
+  const [events, setEvents] = useState<any[]>([])
+
+  useEffect(() => {
+    supabase
+      .from('player_events')
+      .select('*, squad_player:squad_players(name, team_id)')
+      .eq('match_id', matchId)
+      .then(({ data }) => setEvents(data ?? []))
+
+    const ch = supabase.channel(`events-${matchId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_events', filter: `match_id=eq.${matchId}` }, () => {
+        supabase.from('player_events').select('*, squad_player:squad_players(name, team_id)')
+          .eq('match_id', matchId).then(({ data }) => setEvents(data ?? []))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [matchId])
+
+  if (events.length === 0) return null
+
+  const EVENT_ICON: Record<string, string> = {
+    goal: '⚽',
+    goal_extra_time: '⚽',
+    penalty_shootout: '⚽',
+    own_goal: '🥅',
+    red_card: '🟥',
+  }
+
+  const home = events.filter(e => e.squad_player?.team_id === homeTeamId)
+  const away = events.filter(e => e.squad_player?.team_id !== homeTeamId)
+
+  return (
+    <div className="flex justify-between gap-2 mt-2 mb-1 text-xs">
+      <div className="space-y-0.5">
+        {home.map(e => (
+          <p key={e.id} className="text-[var(--text-secondary)]">
+            {EVENT_ICON[e.event_type]} {e.squad_player?.name}
+          </p>
+        ))}
+      </div>
+      <div className="space-y-0.5 text-right">
+        {away.map(e => (
+          <p key={e.id} className="text-[var(--text-secondary)]">
+            {e.squad_player?.name} {EVENT_ICON[e.event_type]}
+          </p>
+        ))}
       </div>
     </div>
   )
