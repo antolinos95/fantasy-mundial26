@@ -2059,19 +2059,16 @@ function PlayerSettingsModal({ leagueId, playerId, currentName, isAdmin, onClose
 
 function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId: string | null }) {
   const [events, setEvents] = useState<any[]>([])
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+
+  const load = (matchId: string) =>
+    supabase.from('player_events').select('*, squad_player:squad_players(name, team_id)')
+      .eq('match_id', matchId).then(({ data }) => { setEvents(data ?? []); setUpdatedAt(new Date()) })
 
   useEffect(() => {
-    supabase
-      .from('player_events')
-      .select('*, squad_player:squad_players(name, team_id)')
-      .eq('match_id', matchId)
-      .then(({ data }) => setEvents(data ?? []))
-
+    load(matchId)
     const ch = supabase.channel(`events-${matchId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_events', filter: `match_id=eq.${matchId}` }, () => {
-        supabase.from('player_events').select('*, squad_player:squad_players(name, team_id)')
-          .eq('match_id', matchId).then(({ data }) => setEvents(data ?? []))
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_events', filter: `match_id=eq.${matchId}` }, () => load(matchId))
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [matchId])
@@ -2090,7 +2087,13 @@ function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId:
   const away = events.filter(e => e.squad_player?.team_id !== homeTeamId)
 
   return (
-    <div className="flex justify-between gap-2 mt-2 mb-1 text-xs">
+    <div className="mt-2 mb-1">
+    {updatedAt && (
+      <p className="text-[10px] text-center text-[var(--text-muted)] mb-1">
+        Actualizado: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </p>
+    )}
+    <div className="flex justify-between gap-2 text-xs">
       <div className="space-y-0.5">
         {home.map(e => (
           <p key={e.id} className="text-[var(--text-secondary)]">
@@ -2105,6 +2108,7 @@ function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId:
           </p>
         ))}
       </div>
+    </div>
     </div>
   )
 }
