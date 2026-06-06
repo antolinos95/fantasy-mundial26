@@ -40,7 +40,6 @@ export default function PushSubscribeButton() {
       if (!user) { alert('Inicia sesión primero'); return }
 
       const permission = await Notification.requestPermission()
-      alert('Permiso: ' + permission)
       if (permission !== 'granted') { setState('denied'); return }
 
       const reg = await navigator.serviceWorker.ready
