@@ -21,11 +21,18 @@ export default function DraftQueueEditor({
 
   useEffect(() => {
     Promise.all([
-      supabase.from('teams').select('*').order('group_name').order('name'),
+      supabase.from('teams').select('*').order('name'),
       supabase.from('draft_queue').select('team_id, rank').eq('player_id', playerId).order('rank'),
     ]).then(([tRes, qRes]) => {
-setTeams(tRes.data ?? [])
-      setQueue((qRes.data ?? []).map(r => r.team_id))
+      const allTeams = tRes.data ?? []
+      setTeams(allTeams)
+      const savedQueue = (qRes.data ?? []).map(r => r.team_id)
+      // Si no hay cola guardada, ordenar todos los equipos alfabéticamente por defecto
+      if (savedQueue.length === 0) {
+        setQueue(allTeams.map(t => t.id))
+      } else {
+        setQueue(savedQueue)
+      }
       setLoaded(true)
     })
   }, [playerId])
@@ -81,7 +88,7 @@ setTeams(tRes.data ?? [])
           </p>
 
           {/* Ordenación rápida */}
-          {queue.length > 1 && (
+          {queue.length > 0 && (
             <div className="flex gap-2 mb-3">
               <button
                 onClick={() => edit(q => [...q].sort((a, b) => (teamById[a]?.name ?? '').localeCompare(teamById[b]?.name ?? '', 'es')))}
