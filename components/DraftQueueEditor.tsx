@@ -130,9 +130,9 @@ export default function DraftQueueEditor({
                 <button key={t.id} onClick={() => add(t.id)}
                   className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left text-sm transition-colors ${
                     isTaken ? 'border-[var(--border)] opacity-40' : 'border-[var(--border)] hover:border-[var(--accent)]'}`}>
+                  {t.group_name && <span className="text-[10px] text-gray-500 shrink-0 font-medium">{t.group_name}</span>}
                   <span>{t.flag_emoji}</span>
                   <span className={`truncate text-xs ${isTaken ? 'line-through' : ''}`}>{t.name}</span>
-                  {t.group_name && <span className="text-[10px] text-[var(--text-muted)] shrink-0">{t.group_name}</span>}
                   <span className="ml-auto text-[var(--accent-glow)]">+</span>
                 </button>
               )
