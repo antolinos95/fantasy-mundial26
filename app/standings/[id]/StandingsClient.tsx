@@ -46,6 +46,7 @@ export default function StandingsClient({
   const [isAdmin, setIsAdmin]       = useState(false)
   const [liveScores, setLiveScores] = useState<Score[]>(scores)
   const [liveMatches, setLiveMatches] = useState<Match[]>(matches)
+  const [matchesUpdatedAt, setMatchesUpdatedAt] = useState<Date | null>(null)
   const [showRules, setShowRules]   = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -69,7 +70,7 @@ export default function StandingsClient({
         const { data } = await supabase.from('matches')
           .select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)')
           .or(`league_id.is.null,league_id.eq.${league.id}`).order('match_date')
-        if (data) setLiveMatches(data)
+        if (data) { setLiveMatches(data); setMatchesUpdatedAt(new Date()) }
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -131,6 +132,7 @@ export default function StandingsClient({
         <MatchesTab
           matches={liveMatches} leagueId={league.id}
           myId={myId} draftedTeams={draftedTeams}
+          updatedAt={matchesUpdatedAt}
         />
       )}
       {tab === 'mundial' && <MundialTab matches={liveMatches} />}
@@ -713,12 +715,13 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
 // ─── PARTIDOS + LINEUP ────────────────────────────────────────
 
 function MatchesTab({
-  matches, leagueId, myId, draftedTeams,
+  matches, leagueId, myId, draftedTeams, updatedAt,
 }: {
   matches: Match[]
   leagueId: string
   myId: string | null
   draftedTeams: DraftedTeam[]
+  updatedAt: Date | null
 }) {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [localGoals, setLocalGoals]   = useState<Record<string, string>>({})
@@ -875,6 +878,11 @@ function MatchesTab({
 
   return (
     <div className="space-y-8">
+      {updatedAt && (
+        <p className="text-[10px] text-center text-[var(--text-muted)] -mb-4">
+          Última actualización: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </p>
+      )}
       {/* Recordatorios */}
       {reminders.length > 0 && (
         <div className="bg-[var(--yellow)]/10 border border-[var(--yellow)]/40 rounded-2xl p-4">
