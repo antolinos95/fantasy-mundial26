@@ -43,16 +43,23 @@ export default function PushSubscribeButton() {
       if (permission !== 'granted') { setState('denied'); return }
 
       const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
-      })
+      let sub: PushSubscription
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
+        })
+      } catch (err) {
+        alert('Error al suscribirse: ' + String(err))
+        return
+      }
 
-      await fetch('/api/push/subscribe', {
+      const res = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub.toJSON(), userId: user.id }),
       })
+      if (!res.ok) { alert('Error al guardar suscripción: ' + res.status); return }
 
       setState('subscribed')
     } finally {
