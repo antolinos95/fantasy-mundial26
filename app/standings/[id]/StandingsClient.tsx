@@ -1936,8 +1936,10 @@ function PlayerSettingsModal({ leagueId, playerId, currentName, isAdmin, onClose
   async function saveName() {
     if (!name.trim() || name.trim() === currentName) return
     setSaving(true)
-    await supabase.from('players').update({ name: name.trim() }).eq('id', playerId)
+    const { data, error, count } = await supabase.from('players').update({ name: name.trim() }, { count: 'exact' }).eq('id', playerId).select()
+    console.log('update result:', { data, error, count })
     setSaving(false)
+    if (error) { alert('Error al guardar: ' + error.message); return }
     onClose()
     location.reload()
   }
