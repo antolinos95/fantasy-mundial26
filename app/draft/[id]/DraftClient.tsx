@@ -99,7 +99,6 @@ const isFinished =
 
   // ── Temporizador / autopick ──
   const timerSecs = league.draft_timer_seconds ?? 0
-  console.log('timer:', timerSecs, 'turn_started_at:', draftState?.turn_started_at, 'remainingMs:', remainingMs)
   const [nowTs, setNowTs] = useState(() => Date.now())
   const lastAutopickRef = useRef<number>(-1)
 
