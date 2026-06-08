@@ -1183,7 +1183,8 @@ function MatchesTab({
                     <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
                   )}
                   {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
-                    !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? '') && (
+                    m.home_team_id && m.away_team_id &&
+                    !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
                     <WildcardButton match={m} leagueId={leagueId} myId={myId} />
                   )}
                 </div>
