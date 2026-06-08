@@ -1181,6 +1181,9 @@ function MatchesTab({
                   {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
                     <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
                   )}
+                  {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId && (
+                    <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+                  )}
                 </div>
               )
             })}
