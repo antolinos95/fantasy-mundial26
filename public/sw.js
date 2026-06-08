@@ -1,5 +1,5 @@
 // Service worker — Fantasy Mundial 2026
-const CACHE = 'fm26-v1'
+const CACHE = 'fm26-v2'
 const SHELL = ['/', '/icon.svg']
 
 // Precarga del shell
