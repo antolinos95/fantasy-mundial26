@@ -107,7 +107,7 @@ export default function StandingsClient({
         </div>
       </div>
 
-      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showRules && <RulesModal onClose={() => setShowRules(false)} wildcardEnabled={league.wildcard_enabled} />}
       <PushSubscribeButton />
       {showSettings && myId && (
         <PlayerSettingsModal
@@ -137,6 +137,7 @@ export default function StandingsClient({
           matches={liveMatches} leagueId={league.id}
           myId={myId} draftedTeams={draftedTeams}
           updatedAt={matchesUpdatedAt}
+          league={league}
         />
       )}
       {tab === 'mundial' && <MundialTab matches={liveMatches} />}
@@ -719,13 +720,14 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
 // ─── PARTIDOS + LINEUP ────────────────────────────────────────
 
 function MatchesTab({
-  matches, leagueId, myId, draftedTeams, updatedAt,
+  matches, leagueId, myId, draftedTeams, updatedAt, league,
 }: {
   matches: Match[]
   leagueId: string
   myId: string | null
   draftedTeams: DraftedTeam[]
   updatedAt: Date | null
+  league: League
 }) {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [localGoals, setLocalGoals]   = useState<Record<string, string>>({})
@@ -988,6 +990,11 @@ function MatchesTab({
                     {/* Eventos en vivo */}
                     {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
                       <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+                    )}
+
+                    {/* Wildcard */}
+                    {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId && (
+                      <WildcardButton match={m} leagueId={leagueId} myId={myId} />
                     )}
 
                     {/* Aviso de bloqueo */}
@@ -1530,6 +1537,27 @@ function AdminTab({ league, matches, players, router }: {
 
       {/* Bonificaciones de clasificación */}
       <QualificationBonusSection allTeams={allTeams} onAward={awardBonus} />
+
+      {/* Modo Wildcard */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-sm">⚡ Modo Wildcard</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+              Permite a jugadores sin equipo participar en partidos eliminatorios pagando 2 pts
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              const newVal = !league.wildcard_enabled
+              await supabase.from('leagues').update({ wildcard_enabled: newVal }).eq('id', league.id)
+              router.refresh()
+            }}
+            className={`relative w-12 h-6 rounded-full transition-colors ${league.wildcard_enabled ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
+            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${league.wildcard_enabled ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -2124,6 +2152,205 @@ function TeamBadge({ team, owner, right }: { team?: import('../../../types').Tea
       <div className={`min-w-0 ${right ? 'text-right' : ''}`}>
         <p className="font-semibold text-sm max-w-[80px] truncate">{team?.name}</p>
         {owner && <p className="text-xs text-[var(--text-secondary)] max-w-[80px] truncate">{owner}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ─── WILDCARD ─────────────────────────────────────────────────
+
+function WildcardButton({ match, leagueId, myId }: {
+  match: Match
+  leagueId: string
+  myId: string
+}) {
+  const [entry, setEntry] = useState<any>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    supabase.from('wildcard_entries')
+      .select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle()
+      .then(({ data }) => { setEntry(data); setLoaded(true) })
+  }, [match.id, myId])
+
+  if (!loaded) return null
+
+  // Bloquear 2h antes
+  const locked = match.match_date
+    ? new Date(match.match_date).getTime() - 2 * 60 * 60 * 1000 <= Date.now()
+    : false
+
+  if (entry) {
+    return (
+      <p className="text-xs text-center text-[var(--accent)] mt-2">
+        ⚡ Wildcard activo — equipo elegido: {entry.qualifier_pick ? '✓' : '?'}
+      </p>
+    )
+  }
+
+  if (locked) return null
+
+  return (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className="w-full mt-2 py-2 rounded-xl border border-[var(--accent)]/50 text-[var(--accent)] text-sm font-semibold hover:bg-[var(--accent)]/10 transition-colors">
+        ⚡ Entrar por 2 pts
+      </button>
+      {showModal && (
+        <WildcardModal
+          match={match} leagueId={leagueId} myId={myId}
+          onClose={() => setShowModal(false)}
+          onDone={(e) => { setEntry(e); setShowModal(false) }}
+        />
+      )}
+    </>
+  )
+}
+
+function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
+  match: Match
+  leagueId: string
+  myId: string
+  onClose: () => void
+  onDone: (entry: any) => void
+}) {
+  const [qualifierPick, setQualifierPick] = useState<string | null>(null)
+  const [homeGoals, setHomeGoals] = useState('')
+  const [awayGoals, setAwayGoals] = useState('')
+  const [squadPlayers, setSquadPlayers] = useState<SquadPlayer[]>([])
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!match.home_team_id || !match.away_team_id) return
+    supabase.from('squad_players').select('*')
+      .in('team_id', [match.home_team_id, match.away_team_id])
+      .order('name')
+      .then(({ data }) => setSquadPlayers(data ?? []))
+  }, [match.home_team_id, match.away_team_id])
+
+  function togglePlayer(id: string) {
+    setSelectedPlayers(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 3 ? [...prev, id] : prev
+    )
+  }
+
+  async function confirm() {
+    if (!qualifierPick) { alert('Elige qué equipo pasa'); return }
+    setSaving(true)
+    try {
+      // 1. Registrar entrada y descontar 2 pts
+      const { error: entryErr } = await supabase.rpc('enter_wildcard', {
+        p_league_id: leagueId, p_player_id: myId,
+        p_match_id: match.id, p_qualifier_pick: qualifierPick,
+      })
+      if (entryErr) { alert(entryErr.message); return }
+
+      // 2. Guardar porra wildcard
+      if (homeGoals !== '' && awayGoals !== '') {
+        await supabase.from('predictions').upsert({
+          match_id: match.id, player_id: myId, league_id: leagueId,
+          home_goals: parseInt(homeGoals), away_goals: parseInt(awayGoals),
+          is_wildcard: true,
+        }, { onConflict: 'match_id,player_id' })
+      }
+
+      // 3. Guardar alineación wildcard
+      if (selectedPlayers.length > 0) {
+        await supabase.from('match_lineups').delete()
+          .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true)
+        await supabase.from('match_lineups').insert(
+          selectedPlayers.map(spId => ({
+            match_id: match.id, player_id: myId, league_id: leagueId,
+            team_id: squadPlayers.find(s => s.id === spId)?.team_id,
+            squad_player_id: spId, is_wildcard: true,
+          }))
+        )
+      }
+
+      const { data: entry } = await supabase.from('wildcard_entries')
+        .select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle()
+      onDone(entry)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const homePlayers = squadPlayers.filter(s => s.team_id === match.home_team_id)
+  const awayPlayers = squadPlayers.filter(s => s.team_id === match.away_team_id)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)] sticky top-0 bg-[var(--bg-surface)]">
+          <p className="font-black text-lg">⚡ Wildcard <span className="text-[var(--red)] text-sm font-normal">-2 pts</span></p>
+          <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
+        </div>
+        <div className="p-4 space-y-5">
+
+          {/* Equipo que pasa */}
+          <div>
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">¿Quién pasa? <span className="text-[var(--accent)]">+2 pts</span></p>
+            <div className="grid grid-cols-2 gap-2">
+              {[match.home_team, match.away_team].map(team => team && (
+                <button key={team.id} onClick={() => setQualifierPick(team.id)}
+                  className={`flex items-center gap-2 p-3 rounded-xl border transition-colors ${qualifierPick === team.id ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] hover:border-[var(--accent)]/50'}`}>
+                  <span className="text-xl">{team.flag_emoji}</span>
+                  <span className="text-sm font-semibold truncate">{team.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Porra */}
+          <div>
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Porra <span className="text-[var(--accent)]">+1 pt</span></p>
+            <div className="flex items-center gap-3 justify-center">
+              <span className="text-sm">{match.home_team?.flag_emoji} {match.home_team?.name}</span>
+              <input type="number" min={0} max={20} value={homeGoals} onChange={e => setHomeGoals(e.target.value)}
+                className="w-12 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-black text-white text-lg focus:outline-none focus:border-[var(--accent)]" />
+              <span className="text-[var(--text-secondary)]">-</span>
+              <input type="number" min={0} max={20} value={awayGoals} onChange={e => setAwayGoals(e.target.value)}
+                className="w-12 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-black text-white text-lg focus:outline-none focus:border-[var(--accent)]" />
+              <span className="text-sm">{match.away_team?.name} {match.away_team?.flag_emoji}</span>
+            </div>
+          </div>
+
+          {/* Jugadores */}
+          <div>
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+              3 jugadores <span className="text-[var(--text-muted)]">({selectedPlayers.length}/3) — goles ×0.5</span>
+            </p>
+            {[{ label: match.home_team?.name ?? '', players: homePlayers },
+              { label: match.away_team?.name ?? '', players: awayPlayers }].map(group => (
+              <div key={group.label} className="mb-3">
+                <p className="text-xs text-[var(--text-secondary)] mb-1">{group.label}</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {group.players.map(sp => (
+                    <button key={sp.id} onClick={() => togglePlayer(sp.id)}
+                      className={`text-xs px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                        selectedPlayers.includes(sp.id)
+                          ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-white'
+                          : selectedPlayers.length >= 3
+                          ? 'border-[var(--border)] opacity-40'
+                          : 'border-[var(--border)] hover:border-[var(--accent)]/50'
+                      }`}>
+                      {sp.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={confirm} disabled={saving || !qualifierPick}
+            className="w-full py-3 bg-[var(--accent)] text-white font-black rounded-xl disabled:opacity-40 transition-opacity">
+            {saving ? 'Guardando…' : '⚡ Confirmar (-2 pts)'}
+          </button>
+        </div>
       </div>
     </div>
   )

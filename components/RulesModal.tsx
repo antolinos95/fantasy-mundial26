@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-export default function RulesModal({ onClose }: { onClose: () => void }) {
+export default function RulesModal({ onClose, wildcardEnabled = false }: { onClose: () => void; wildcardEnabled?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -86,6 +86,17 @@ export default function RulesModal({ onClose }: { onClose: () => void }) {
             <Bullet><b>Ajustes</b> (⚙️): cambiar tu nombre o salir de la liga.</Bullet>
             <Bullet>El <b>admin</b> introduce resultados, eventos de jugadores, asigna los cruces eliminatorios y otorga las bonificaciones.</Bullet>
           </Faq>
+
+          {wildcardEnabled && (
+            <Faq q="⚡ Modo Wildcard">
+              <Bullet>En partidos de <b>fase eliminatoria</b>, si no eres propietario de ninguno de los dos equipos, puedes entrar como wildcard.</Bullet>
+              <Bullet>Pagar <b>2 pts</b> de tu clasificación para participar.</Bullet>
+              <Bullet><b>¿Quién pasa?</b>: elige el equipo que crees que avanza. Si aciertas, <b>+2 pts</b>.</Bullet>
+              <Bullet><b>Porra</b>: predice el resultado exacto. Si aciertas, <b>+1 pt</b>.</Bullet>
+              <Bullet><b>Jugadores</b>: elige 3 jugadores. Los goles puntúan a la mitad (×0.5). Autogoles y tarjetas rojas restan igual (-1 pt).</Bullet>
+              <Bullet>Si no aciertas nada, pierdes los 2 pts de entrada.</Bullet>
+            </Faq>
+          )}
         </div>
       </div>
     </div>

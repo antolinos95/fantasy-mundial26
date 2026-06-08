@@ -6,6 +6,7 @@ export interface League {
   admin_player_id: string | null
   admin_user_id: string | null
   draft_timer_seconds: number | null
+  wildcard_enabled: boolean
   created_at: string
 }
 
