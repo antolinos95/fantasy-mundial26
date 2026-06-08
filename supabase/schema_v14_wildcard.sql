@@ -24,7 +24,7 @@ ALTER TABLE match_lineups ADD COLUMN IF NOT EXISTS is_wildcard boolean NOT NULL 
 
 -- 4. Actualizar recalculate_scores para incluir puntos wildcard
 CREATE OR REPLACE FUNCTION recalculate_scores(p_match_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $func$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $recalc_v14$
 DECLARE
   v_match       matches%ROWTYPE;
   v_league_id   uuid;
@@ -196,12 +196,12 @@ BEGIN
     GROUP BY league_id, player_id;
   END IF;
 END;
-$func$;
+$recalc_v14$;
 
 -- 5. Función para registrar entrada wildcard (descuenta 2 pts)
 CREATE OR REPLACE FUNCTION enter_wildcard(
   p_league_id uuid, p_player_id uuid, p_match_id uuid, p_qualifier_pick uuid
-) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $func$
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $recalc_v14$
 BEGIN
   -- Insertar entrada (falla si ya existe por UNIQUE constraint)
   INSERT INTO wildcard_entries(league_id, player_id, match_id, qualifier_pick)
@@ -218,7 +218,7 @@ BEGIN
   FROM score_log WHERE league_id=p_league_id AND player_id=p_player_id
   GROUP BY league_id, player_id;
 END;
-$func$;
+$recalc_v14$;
 
 -- 6. Columna is_wildcard en predictions
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_wildcard boolean NOT NULL DEFAULT false;
