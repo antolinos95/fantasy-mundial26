@@ -851,6 +851,19 @@ function MatchesTab({
       })
   }, [myId])
 
+  // Precargar squads de los equipos del usuario para mostrar nombres en el preview
+  useEffect(() => {
+    if (myTeamIds.length === 0) return
+    myTeamIds.forEach(teamId => {
+      supabase.from('squad_players').select('*')
+        .eq('team_id', teamId).order('position').order('shirt_number')
+        .then(({ data }) => {
+          if (data) setSquadPlayers(prev => ({ ...prev, [teamId]: data }))
+        })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTeamIds.join(',')])
+
   async function loadSquad(teamId: string) {
     if (squadPlayers[teamId]) return
     const { data } = await supabase.from('squad_players').select('*')
