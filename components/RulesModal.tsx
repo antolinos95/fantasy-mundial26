@@ -38,14 +38,15 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
 
           <Faq q="⚽ ¿Cómo se puntúa?">
             <p className="font-semibold">Por resultado del partido:</p>
-            <Bullet>✅ Victoria: +2 puntos</Bullet>
-            <Bullet>🤝 Empate: +1 punto para cada propietario</Bullet>
+            <Bullet>✅ Victoria: +2 puntos al propietario del equipo ganador</Bullet>
+            <Bullet>🤝 Empate: +1 punto a cada propietario</Bullet>
             <Bullet>Si una selección no tiene dueño, esos puntos no se asignan.</Bullet>
 
             <p className="font-semibold mt-2">🎯 Porra del marcador:</p>
-            <Bullet>Los dos propietarios predicen el resultado exacto.</Bullet>
-            <Bullet>Si aciertas, <b>robas 1 punto</b> a tu rival.</Bullet>
+            <Bullet>Antes de cada partido predices el resultado exacto (goles local - goles visitante).</Bullet>
+            <Bullet>Si aciertas y tu rival no, <b>robas 1 punto</b> a tu rival.</Bullet>
             <Bullet>Si ambos aciertan o ambos fallan, no pasa nada.</Bullet>
+            <Bullet>Si el rival no tiene dueño y aciertas, ganas <b>+1 pt</b> directamente.</Bullet>
 
             <p className="font-semibold mt-2">⭐ Jugadores destacados:</p>
             <Bullet>Eliges 3 jugadores de tu selección por partido.</Bullet>
@@ -57,6 +58,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p className="font-semibold mt-2">🏅 Bonificaciones por clasificación (acumulativas):</p>
             <Bullet>Octavos +1 · Cuartos +3 · Semifinales +5 · Final +8</Bullet>
             <Bullet>Campeón: +17 + los puntos que sume en la final</Bullet>
+            <Bullet>Las bonificaciones las aplica el admin cuando un equipo pasa de ronda.</Bullet>
           </Faq>
 
           <Faq q="🤝 ¿Y si hay empate a puntos?">
@@ -71,6 +73,14 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p>La porra y los 3 jugadores destacados se envían el día anterior al partido.</p>
             <Bullet>Se <b>bloquean 2 horas antes</b> del inicio. Después no se pueden cambiar.</Bullet>
             <Bullet>Recibirás un aviso en la pestaña Partidos de los encuentros sin completar (entre 24h y 2h antes).</Bullet>
+            <Bullet>Las elecciones de todos los jugadores se revelan <b>1 hora antes</b> del partido para evitar copias.</Bullet>
+          </Faq>
+
+          <Faq q="📺 ¿Cómo se actualiza el marcador en directo?">
+            <p>Los resultados se sincronizan automáticamente con una fuente de datos oficial durante los partidos.</p>
+            <Bullet>Los goles y expulsiones aparecen en la tarjeta del partido en tiempo real.</Bullet>
+            <Bullet>Los puntos se calculan automáticamente al terminar el partido.</Bullet>
+            <Bullet>Puedes forzar una actualización con el botón 🔄 en la cabecera de la tabla.</Bullet>
           </Faq>
 
           <Faq q="🌍 ¿Cómo veo las fases del Mundial?">
