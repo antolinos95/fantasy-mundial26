@@ -30,6 +30,8 @@ export default function DraftClient({
   const [search, setSearch] = useState('')
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
   const [forcingPick, setForcingPick] = useState(false)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const musicStopRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     async function resolveMyId() {
@@ -134,6 +136,57 @@ const isFinished = draftState?.finished ?? false
     const h = Math.floor(m / 60)
     return `${h}h ${m % 60}m`
   }
+
+  function playDraftTune() {
+    if (typeof window === 'undefined') return
+    try {
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+      // Melodía tipo "es tu turno" — notas en Hz
+      const notes = [523, 659, 784, 1047, 784, 659, 523, 0, 659, 784, 880, 784, 659, 523, 0, 0]
+      const BPM = 140
+      const beat = 60 / BPM
+      let stopped = false
+
+      const playLoop = () => {
+        if (stopped || ctx.state === 'closed') return
+        let t = ctx.currentTime
+        notes.forEach((freq) => {
+          if (freq > 0) {
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.connect(gain); gain.connect(ctx.destination)
+            osc.type = 'sine'
+            osc.frequency.value = freq
+            gain.gain.setValueAtTime(0, t)
+            gain.gain.linearRampToValueAtTime(0.12, t + 0.01)
+            gain.gain.linearRampToValueAtTime(0, t + beat * 0.8)
+            osc.start(t); osc.stop(t + beat)
+          }
+          t += beat
+        })
+        const loopDuration = notes.length * beat * 1000
+        const tid = setTimeout(() => { if (!stopped) playLoop() }, loopDuration)
+        musicStopRef.current = () => { stopped = true; clearTimeout(tid); ctx.close() }
+      }
+      playLoop()
+    } catch { /* autoplay bloqueado o no soportado */ }
+  }
+
+  function stopDraftTune() {
+    musicStopRef.current?.()
+    musicStopRef.current = null
+  }
+
+  useEffect(() => {
+    if (isMyTurn && !isFinished) {
+      playDraftTune()
+    } else {
+      stopDraftTune()
+    }
+    return () => stopDraftTune()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMyTurn, isFinished])
 
   async function forceAutopick() {
     if (!isAdmin || forcingPick || isFinished) return
