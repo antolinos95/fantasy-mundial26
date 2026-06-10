@@ -99,12 +99,20 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
 
           {wildcardEnabled && (
             <Faq q="⚡ Modo Wildcard">
-              <Bullet>En partidos de <b>fase eliminatoria</b>, si no eres propietario de ninguno de los dos equipos, puedes entrar como wildcard.</Bullet>
-              <Bullet>Pagar <b>2 pts</b> de tu clasificación para participar.</Bullet>
-              <Bullet><b>¿Quién pasa?</b>: elige el equipo que crees que avanza. Si aciertas, <b>+2 pts</b>.</Bullet>
-              <Bullet><b>Porra</b>: predice el resultado exacto. Si aciertas, <b>+1 pt</b>.</Bullet>
-              <Bullet><b>Jugadores</b>: elige 3 jugadores. Los goles puntúan a la mitad (×0.5). Autogoles y tarjetas rojas restan igual (-1 pt).</Bullet>
-              <Bullet>Si no aciertas nada, pierdes los 2 pts de entrada.</Bullet>
+              <p>Para que el juego siga siendo entretenido hasta el final y los jugadores cuyos equipos hayan sido eliminados puedan seguir participando, existe el Modo Wildcard.</p>
+              <p>En los partidos de eliminación directa, si no eres propietario de ninguno de los dos equipos que se enfrentan, puedes entrar como Wildcard.</p>
+
+              <Bullet><b>Coste de entrada:</b> 2 puntos de tu clasificación.</Bullet>
+              <Bullet><b>¿Quién pasa?</b> Elige el equipo que crees que se clasificará. Si aciertas, ganas <b>+2 puntos</b>.</Bullet>
+              <Bullet><b>Porra:</b> Predice el resultado exacto del partido. Si aciertas, ganas <b>+1 punto</b>.</Bullet>
+
+              <p className="font-semibold mt-1">Jugadores: Selecciona 3 jugadores. Los goles puntúan a la mitad de su valor habitual:</p>
+              <Bullet>Gol en tiempo reglamentario: <b>0,5 puntos</b> (en lugar de 1).</Bullet>
+              <Bullet>Gol en prórroga: <b>0,25 puntos</b> (en lugar de 0,5).</Bullet>
+              <Bullet>Gol en tanda de penaltis: <b>0,125 puntos</b> (en lugar de 0,25).</Bullet>
+              <Bullet>Los autogoles y las tarjetas rojas mantienen su penalización habitual de <b>−1 punto</b>.</Bullet>
+
+              <p className="mt-1">❌ Si no aciertas ninguna de tus predicciones, perderás los 2 puntos de entrada.</p>
             </Faq>
           )}
         </div>
