@@ -1581,6 +1581,7 @@ function AdminTab({ league, matches, players, router }: {
   league: League; matches: Match[]; players: Player[]; router: ReturnType<typeof useRouter>
 }) {
   const [allTeams, setAllTeams] = useState<import('../../../types').Team[]>([])
+  const [wildcardEnabled, setWildcardEnabled] = useState(league.wildcard_enabled)
 
   useEffect(() => {
     supabase.from('teams').select('*').order('name').then(({ data }) => { if (data) setAllTeams(data) })
@@ -1648,12 +1649,12 @@ function AdminTab({ league, matches, players, router }: {
           </div>
           <button
             onClick={async () => {
-              const newVal = !league.wildcard_enabled
+              const newVal = !wildcardEnabled
+              setWildcardEnabled(newVal)
               await supabase.from('leagues').update({ wildcard_enabled: newVal }).eq('id', league.id)
-              router.refresh()
             }}
-            className={`relative w-12 h-6 rounded-full transition-colors ${league.wildcard_enabled ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
-            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${league.wildcard_enabled ? 'left-7' : 'left-1'}`} />
+            className={`relative w-12 h-6 rounded-full transition-colors ${wildcardEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
+            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${wildcardEnabled ? 'left-7' : 'left-1'}`} />
           </button>
         </div>
       </div>
