@@ -58,7 +58,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p className="font-semibold mt-2">🏅 Bonificaciones por clasificación (acumulativas):</p>
             <Bullet>Octavos +1 · Cuartos +3 · Semifinales +5 · Final +8</Bullet>
             <Bullet>Campeón: +17 + los puntos que sume en la final</Bullet>
-            <Bullet>Las bonificaciones las aplica el admin cuando un equipo pasa de ronda.</Bullet>
+            <Bullet>Las bonificaciones se aplican <b>automáticamente</b> al terminar cada partido eliminatorio.</Bullet>
           </Faq>
 
           <Faq q="🤝 ¿Y si hay empate a puntos?">
