@@ -5,12 +5,13 @@ import { supabase } from '../lib/supabase'
 import type { Team } from '../types'
 
 export default function DraftQueueEditor({
-  leagueId, playerId, takenTeamIds = [], defaultOpen = false,
+  leagueId, playerId, takenTeamIds = [], defaultOpen = false, onPick,
 }: {
   leagueId: string
   playerId: string
-  takenTeamIds?: string[]   // equipos ya elegidos (modo draft) → se marcan como tomados
+  takenTeamIds?: string[]
   defaultOpen?: boolean
+  onPick?: (teamId: string) => void  // si se pasa, permite pickear desde la cola
 }) {
   const [open, setOpen]     = useState(defaultOpen)
   const [teams, setTeams]   = useState<Team[]>([])
@@ -96,9 +97,23 @@ export default function DraftQueueEditor({
                 return (
                   <div key={id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${isTaken ? 'bg-[var(--bg-elevated)]/40 opacity-50' : 'bg-[var(--bg-elevated)]'}`}>
                     <span className="w-5 text-center text-xs font-bold text-[var(--accent-glow)]">{i + 1}</span>
-                    <span className="text-lg">{t?.flag_emoji}</span>
-                    <span className={`flex-1 text-sm truncate ${isTaken ? 'line-through' : ''}`}>{t?.name}</span>
-                    {isTaken && <span className="text-[10px] text-[var(--red)]">tomada</span>}
+                    {onPick && !isTaken ? (
+                      <button
+                        onClick={() => onPick(id)}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-[var(--accent)] transition-colors group"
+                        title="Elegir ahora"
+                      >
+                        <span className="text-lg">{t?.flag_emoji}</span>
+                        <span className="flex-1 text-sm truncate">{t?.name}</span>
+                        <span className="text-[10px] text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity shrink-0">Elegir →</span>
+                      </button>
+                    ) : (
+                      <>
+                        <span className="text-lg">{t?.flag_emoji}</span>
+                        <span className={`flex-1 text-sm truncate ${isTaken ? 'line-through' : ''}`}>{t?.name}</span>
+                        {isTaken && <span className="text-[10px] text-[var(--red)]">tomada</span>}
+                      </>
+                    )}
                     <button onClick={() => move(i, -1)} disabled={i === 0}
                       className="text-[var(--text-secondary)] hover:text-white disabled:opacity-20 px-1">▲</button>
                     <button onClick={() => move(i, 1)} disabled={i === queue.length - 1}

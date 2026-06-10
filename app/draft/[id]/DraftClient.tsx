@@ -247,6 +247,7 @@ const draftCompleted =
         <DraftQueueEditor
           leagueId={league.id} playerId={myId}
           takenTeamIds={[...pickedTeamIds]}
+          onPick={isMyTurn && !picking ? (teamId) => { pickTeam(teamId) } : undefined}
         />
       )}
 
