@@ -1138,7 +1138,9 @@ function MatchesTab({
                               onChange={e => setVisitorGoals(p => ({ ...p, [m.id]: e.target.value }))}
                               className="w-14 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-bold text-white focus:outline-none focus:border-[var(--accent)]" />
                             <button onClick={() => submitPrediction(m.id)} disabled={saving === m.id}
-                              className="ml-auto px-3 py-1.5 bg-[var(--accent)] text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                              className={`ml-auto px-3 py-1.5 text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors ${
+                                savedPred === m.id ? 'bg-[var(--green)] text-black' : 'bg-[var(--accent)] text-white'
+                              }`}>
                               {saving === m.id ? '…' : savedPred === m.id ? '✓ Guardado' : 'Guardar'}
                             </button>
                           </div>
