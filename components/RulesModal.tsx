@@ -73,7 +73,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p>La porra y los 3 jugadores destacados se envían el día anterior al partido.</p>
             <Bullet>Se <b>bloquean 2 horas antes</b> del inicio. Después no se pueden cambiar.</Bullet>
             <Bullet>Recibirás un aviso en la pestaña Partidos de los encuentros sin completar (entre 24h y 2h antes).</Bullet>
-            <Bullet>Las elecciones de todos los jugadores se revelan <b>1 hora antes</b> del partido para evitar copias.</Bullet>
+            <Bullet>Las elecciones de todos los jugadores se revelan <b>1 hora antes</b> del partido.</Bullet>
           </Faq>
 
           <Faq q="📺 ¿Cómo se actualiza el marcador en directo?">
