@@ -25,9 +25,11 @@ export default function DraftClient({
   const [draftState, setDraftState] = useState<DraftState | null>(initialDraftState)
   const [draftedTeams, setDraftedTeams] = useState<DraftedTeam[]>(initialDraftedTeams)
   const [myId, setMyId] = useState<string | null>(null)
+  const [myUserId, setMyUserId] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
+  const [forcingPick, setForcingPick] = useState(false)
 
   useEffect(() => {
     async function resolveMyId() {
@@ -37,6 +39,7 @@ export default function DraftClient({
         .from('players').select('id')
         .eq('league_id', league.id).eq('user_id', user.id)
         .maybeSingle()
+      setMyUserId(user.id)
       if (player) { setPlayerId(player.id); setMyId(player.id) }
     }
     resolveMyId()
@@ -94,8 +97,10 @@ export default function DraftClient({
 
   const currentPlayer = draftState ? getPlayerAtPick(draftState.current_pick) : null
   const isMyTurn = !!myId && currentPlayer?.id === myId
-const isFinished =
-  draftState?.finished ?? false
+const isFinished = draftState?.finished ?? false
+  const isAdmin =
+    (!!myId && myId === league.admin_player_id) ||
+    (!!myUserId && myUserId === league.admin_user_id)
 
   // ── Temporizador / autopick ──
   const timerSecs = league.draft_timer_seconds ?? 0
@@ -128,6 +133,13 @@ const isFinished =
     if (m < 60) return `${m}m ${s % 60}s`
     const h = Math.floor(m / 60)
     return `${h}h ${m % 60}m`
+  }
+
+  async function forceAutopick() {
+    if (!isAdmin || forcingPick || isFinished) return
+    setForcingPick(true)
+    await supabase.rpc('force_autopick', { p_league_id: league.id })
+    setForcingPick(false)
   }
 
   async function pickTeam(teamId: string) {
@@ -202,18 +214,30 @@ const draftCompleted =
         {isFinished ? (
           <p className="font-bold text-[var(--green)] text-center">✅ Draft finalizado</p>
         ) : (
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
               <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">Pick #{draftState?.current_pick} · Ronda {draftState?.round}</p>
-              <p className="font-bold text-lg mt-0.5">
+              <p className="font-bold text-lg mt-0.5 truncate">
                 {isMyTurn ? '¡Tu turno! Elige una selección' : `Elige: ${currentPlayer?.name ?? '...'}`}
               </p>
             </div>
-            {remainingMs !== null
-              ? <span className={`font-black tabular-nums text-lg ${remainingMs < 30000 ? 'text-[var(--red)]' : 'text-[var(--text-secondary)]'}`}>
-                  ⏱ {fmtRemaining(remainingMs)}
-                </span>
-              : isMyTurn && <span className="text-2xl">👆</span>}
+            <div className="flex items-center gap-2 shrink-0">
+              {remainingMs !== null
+                ? <span className={`font-black tabular-nums text-lg ${remainingMs < 30000 ? 'text-[var(--red)]' : 'text-[var(--text-secondary)]'}`}>
+                    ⏱ {fmtRemaining(remainingMs)}
+                  </span>
+                : isMyTurn && <span className="text-2xl">👆</span>}
+              {isAdmin && (
+                <button
+                  onClick={forceAutopick}
+                  disabled={forcingPick || isMyTurn}
+                  title={isMyTurn ? 'Es tu turno, elige tú' : 'Forzar autopick (admin)'}
+                  className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--red)]/20 border border-[var(--red)]/40 text-[var(--red)] hover:bg-[var(--red)]/30 disabled:opacity-40 transition-colors"
+                >
+                  {forcingPick ? '…' : '⏭ Skip'}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
