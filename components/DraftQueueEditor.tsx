@@ -11,7 +11,7 @@ export default function DraftQueueEditor({
   playerId: string
   takenTeamIds?: string[]
   defaultOpen?: boolean
-  onPick?: (teamId: string) => void  // si se pasa, permite pickear desde la cola
+  onPick?: (team: Team) => void  // si se pasa, permite abrir panel de confirmación desde la cola
 }) {
   const [open, setOpen]     = useState(defaultOpen)
   const [teams, setTeams]   = useState<Team[]>([])
@@ -99,7 +99,7 @@ export default function DraftQueueEditor({
                     <span className="w-5 text-center text-xs font-bold text-[var(--accent-glow)]">{i + 1}</span>
                     {onPick && !isTaken ? (
                       <button
-                        onClick={() => onPick(id)}
+                        onClick={() => t && onPick(t)}
                         className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-[var(--accent)] transition-colors group"
                         title="Elegir ahora"
                       >
