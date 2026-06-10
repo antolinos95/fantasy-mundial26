@@ -812,6 +812,7 @@ function MatchesTab({
   const [localGoals, setLocalGoals]   = useState<Record<string, string>>({})
   const [visitorGoals, setVisitorGoals] = useState<Record<string, string>>({})
   const [saving, setSaving]           = useState<string | null>(null)
+  const [savedPred, setSavedPred]     = useState<string | null>(null)
 
   // Lineups: key = `${matchId}-${teamId}` → selected squad_player_ids
   const [lineups, setLineups]         = useState<Record<string, string[]>>({})
@@ -918,6 +919,8 @@ function MatchesTab({
       setVisitorGoals(prev => ({ ...prev, ...newVisitor }))
     }
     setSaving(null)
+    setSavedPred(matchId)
+    setTimeout(() => setSavedPred(null), 2000)
   }
 
   function ownerName(teamId: string) {
@@ -1136,7 +1139,7 @@ function MatchesTab({
                               className="w-14 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-bold text-white focus:outline-none focus:border-[var(--accent)]" />
                             <button onClick={() => submitPrediction(m.id)} disabled={saving === m.id}
                               className="ml-auto px-3 py-1.5 bg-[var(--accent)] text-white text-sm font-semibold rounded-lg disabled:opacity-50">
-                              {saving === m.id ? '…' : 'Guardar'}
+                              {saving === m.id ? '…' : savedPred === m.id ? '✓ Guardado' : 'Guardar'}
                             </button>
                           </div>
                         )}
