@@ -208,14 +208,14 @@ const isFinished = draftState?.finished ?? false
     if (error) { alert(error.message); setPicking(false); return }
 
     const limit = draftState.teams_per_player || 0
+    const totalNeeded = players.length * limit
 
-const picksAfter = draftedTeams.length + 1
+    const { count: picksAfter } = await supabase
+      .from('drafted_teams')
+      .select('*', { count: 'exact', head: true })
+      .eq('league_id', league.id)
 
-const totalNeeded =
-  players.length * limit
-
-const draftCompleted =
-  picksAfter >= totalNeeded
+    const draftCompleted = totalNeeded > 0 && (picksAfter ?? 0) >= totalNeeded
     const nextPick = draftState.current_pick + 1
     const zp = nextPick - 1
     const nextRound = Math.floor(zp / n) + 1
