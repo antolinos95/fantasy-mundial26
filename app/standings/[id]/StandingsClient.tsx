@@ -825,7 +825,18 @@ function MatchesTab({
   useEffect(() => {
     if (!myId) return
     supabase.from('predictions').select('*').eq('player_id', myId)
-      .then(({ data }) => { if (data) setPredictions(data) })
+      .then(({ data }) => {
+        if (!data) return
+        setPredictions(data)
+        const newLocal: Record<string, string> = {}
+        const newVisitor: Record<string, string> = {}
+        data.forEach(p => {
+          newLocal[p.match_id] = String(p.home_goals)
+          newVisitor[p.match_id] = String(p.away_goals)
+        })
+        setLocalGoals(newLocal)
+        setVisitorGoals(newVisitor)
+      })
     // Cargar lineups existentes
     supabase.from('match_lineups').select('*').eq('player_id', myId)
       .then(({ data }) => {
@@ -894,7 +905,18 @@ function MatchesTab({
       { onConflict: 'match_id,player_id' }
     )
     const { data } = await supabase.from('predictions').select('*').eq('player_id', myId)
-    if (data) setPredictions(data)
+    if (data) {
+      setPredictions(data)
+      // Sincronizar inputs con los valores guardados
+      const newLocal: Record<string, string> = {}
+      const newVisitor: Record<string, string> = {}
+      data.forEach(p => {
+        newLocal[p.match_id] = String(p.home_goals)
+        newVisitor[p.match_id] = String(p.away_goals)
+      })
+      setLocalGoals(prev => ({ ...prev, ...newLocal }))
+      setVisitorGoals(prev => ({ ...prev, ...newVisitor }))
+    }
     setSaving(null)
   }
 
@@ -1104,12 +1126,12 @@ function MatchesTab({
                         {able && (
                           <div className="flex items-center gap-2">
                             <input type="number" min="0" max="20"
-                              defaultValue={myPred?.home_goals ?? ''}
+                              value={localGoals[m.id] ?? ''}
                               onChange={e => setLocalGoals(p => ({ ...p, [m.id]: e.target.value }))}
                               className="w-14 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-bold text-white focus:outline-none focus:border-[var(--accent)]" />
                             <span className="text-[var(--text-secondary)]">-</span>
                             <input type="number" min="0" max="20"
-                              defaultValue={myPred?.away_goals ?? ''}
+                              value={visitorGoals[m.id] ?? ''}
                               onChange={e => setVisitorGoals(p => ({ ...p, [m.id]: e.target.value }))}
                               className="w-14 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-bold text-white focus:outline-none focus:border-[var(--accent)]" />
                             <button onClick={() => submitPrediction(m.id)} disabled={saving === m.id}
