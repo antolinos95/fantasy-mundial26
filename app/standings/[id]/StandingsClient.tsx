@@ -15,8 +15,9 @@ type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'admin'
 const STAGE_LABELS: Record<string, string> = { r16: 'Octavos', qf: 'Cuartos', sf: 'Semifinal', final: 'Final' }
 const STAGE_PTS:   Record<string, number>  = { r16: 1, qf: 3, sf: 5, final: 8 }
 
-const LOCK_BEFORE_MS = 2 * 60 * 60 * 1000   // se bloquea 2h antes
-const REMIND_FROM_MS = 24 * 60 * 60 * 1000  // recordatorio desde 24h antes
+const LOCK_BEFORE_MS   = 2 * 60 * 60 * 1000   // se bloquea 2h antes
+const REMIND_FROM_MS   = 24 * 60 * 60 * 1000  // recordatorio desde 24h antes
+const REVEAL_BEFORE_MS = 1 * 60 * 60 * 1000   // porras y jugadores visibles 1h antes
 
 const EVENT_LABELS: Record<string, string> = {
   goal: '⚽ Gol (reglamentario)',
@@ -137,7 +138,7 @@ export default function StandingsClient({
           matches={liveMatches} leagueId={league.id}
           myId={myId} draftedTeams={draftedTeams}
           updatedAt={matchesUpdatedAt}
-          league={league}
+          league={league} players={players}
         />
       )}
       {tab === 'mundial' && <MundialTab matches={liveMatches} />}
@@ -613,6 +614,83 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
   )
 }
 
+// ─── PORRAS Y JUGADORES DE TODOS (visible 1h antes) ──────────
+
+function AllPredictionsReveal({ match, players, leagueId }: {
+  match: Match
+  players: Player[]
+  leagueId: string
+}) {
+  const [preds, setPreds]     = useState<{ player_id: string; home_goals: number; away_goals: number }[]>([])
+  const [lineups, setLineups] = useState<{ player_id: string; squad_player: SquadPlayer }[]>([])
+  const [open, setOpen]       = useState(false)
+  const [loaded, setLoaded]   = useState(false)
+
+  useEffect(() => {
+    if (!open || loaded) return
+    Promise.all([
+      supabase.from('predictions').select('player_id, home_goals, away_goals')
+        .eq('match_id', match.id).eq('is_wildcard', false),
+      supabase.from('match_lineups').select('player_id, squad_player:squad_players(*)')
+        .eq('match_id', match.id).eq('is_wildcard', false),
+    ]).then(([pr, lu]) => {
+      setPreds(pr.data ?? [])
+      setLineups((lu.data as any[]) ?? [])
+      setLoaded(true)
+    })
+  }, [open, loaded, match.id])
+
+  const playerName = (id: string) => players.find(p => p.id === id)?.name ?? '?'
+
+  return (
+    <div className="border-t border-[var(--border)] mt-3 pt-3">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] hover:text-white transition-colors"
+      >
+        <span>👁 Porras y jugadores</span>
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {players.map(pl => {
+            const pred = preds.find(p => p.player_id === pl.id)
+            const plLineup = lineups.filter(l => l.player_id === pl.id)
+            if (!pred && plLineup.length === 0) return null
+            return (
+              <div key={pl.id} className="bg-[var(--bg-elevated)] rounded-xl px-3 py-2">
+                <p className="text-xs font-bold mb-1.5">{pl.name}</p>
+                {pred && (
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">
+                    🎯 Porra: <span className="text-white font-semibold">{pred.home_goals} - {pred.away_goals}</span>
+                    {match.status === 'finished' && match.home_goals !== null && (
+                      pred.home_goals === match.home_goals && pred.away_goals === match.away_goals
+                        ? <span className="text-[var(--green)] ml-1">✓</span>
+                        : <span className="text-[var(--red)] ml-1">✗</span>
+                    )}
+                  </p>
+                )}
+                {plLineup.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {plLineup.map((l, i) => (
+                      <span key={i} className="text-[11px] bg-[var(--bg-surface)] px-2 py-0.5 rounded-lg">
+                        {l.squad_player.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {preds.length === 0 && lineups.length === 0 && (
+            <p className="text-xs text-[var(--text-secondary)]">Nadie ha enviado porra o jugadores aún</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── RESUMEN DE PARTIDO FINALIZADO ───────────────────────────
 
 function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
@@ -720,7 +798,7 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
 // ─── PARTIDOS + LINEUP ────────────────────────────────────────
 
 function MatchesTab({
-  matches, leagueId, myId, draftedTeams, updatedAt, league,
+  matches, leagueId, myId, draftedTeams, updatedAt, league, players,
 }: {
   matches: Match[]
   leagueId: string
@@ -728,6 +806,7 @@ function MatchesTab({
   draftedTeams: DraftedTeam[]
   updatedAt: Date | null
   league: League
+  players: Player[]
 }) {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [localGoals, setLocalGoals]   = useState<Record<string, string>>({})
@@ -851,6 +930,12 @@ function MatchesTab({
     if (!myId || match.status !== 'scheduled') return false
     if (isLocked(match)) return false
     return myTeamIds.includes(match.home_team_id ?? '') || myTeamIds.includes(match.away_team_id ?? '')
+  }
+
+  function isRevealed(match: Match) {
+    if (match.status === 'finished') return true
+    if (!match.match_date) return false
+    return new Date(match.match_date).getTime() - REVEAL_BEFORE_MS <= Date.now()
   }
 
   const [visibleMy, setVisibleMy]       = useState(5)
@@ -996,6 +1081,11 @@ function MatchesTab({
                     {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
                       !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? '') && (
                       <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+                    )}
+
+                    {/* Porras y jugadores de todos — visible 1h antes */}
+                    {isRevealed(m) && (
+                      <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
                     )}
 
                     {/* Aviso de bloqueo */}
@@ -1186,6 +1276,9 @@ function MatchesTab({
                     m.home_team_id && m.away_team_id &&
                     !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
                     <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+                  )}
+                  {isRevealed(m) && (
+                    <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
                   )}
                 </div>
               )
