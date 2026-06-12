@@ -637,7 +637,8 @@ function AllPredictionsReveal({ match, players, leagueId }: {
   leagueId: string
 }) {
   const [preds, setPreds]     = useState<{ player_id: string; home_goals: number; away_goals: number }[]>([])
-  const [lineups, setLineups] = useState<{ player_id: string; squad_player: SquadPlayer }[]>([])
+  const [lineups, setLineups] = useState<{ player_id: string; squad_player_id: string; squad_player: SquadPlayer }[]>([])
+  const [events, setEvents]   = useState<{ squad_player_id: string; event_type: string }[]>([])
   const [open, setOpen]       = useState(false)
   const [loaded, setLoaded]   = useState(false)
 
@@ -646,11 +647,14 @@ function AllPredictionsReveal({ match, players, leagueId }: {
     Promise.all([
       supabase.from('predictions').select('player_id, home_goals, away_goals')
         .eq('match_id', match.id).eq('is_wildcard', false),
-      supabase.from('match_lineups').select('player_id, squad_player:squad_players(*)')
+      supabase.from('match_lineups').select('player_id, squad_player_id, squad_player:squad_players(*)')
         .eq('match_id', match.id).eq('is_wildcard', false),
-    ]).then(([pr, lu]) => {
+      supabase.from('player_events').select('squad_player_id, event_type')
+        .eq('match_id', match.id),
+    ]).then(([pr, lu, ev]) => {
       setPreds(pr.data ?? [])
       setLineups((lu.data as any[]) ?? [])
+      setEvents((ev.data as any[]) ?? [])
       setLoaded(true)
     })
   }, [open, loaded, match.id])
