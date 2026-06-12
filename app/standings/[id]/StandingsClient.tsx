@@ -10,7 +10,7 @@ import type {
 import RulesModal from '../../../components/RulesModal'
 import PushSubscribeButton from '../../../components/PushSubscribeButton'
 
-type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'admin'
+type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'avisos' | 'admin'
 
 const STAGE_LABELS: Record<string, string> = { r16: 'Octavos', qf: 'Cuartos', sf: 'Semifinal', final: 'Final' }
 const STAGE_PTS:   Record<string, number>  = { r16: 1, qf: 3, sf: 5, final: 8 }
@@ -78,11 +78,22 @@ export default function StandingsClient({
     return () => { supabase.removeChannel(ch) }
   }, [league.id])
 
+  const [unreadAvisos, setUnreadAvisos] = useState(0)
+
+  useEffect(() => {
+    const key = `avisos_read_${league.id}`
+    const lastRead = localStorage.getItem(key) ?? '1970-01-01'
+    supabase.from('announcements').select('id', { count: 'exact', head: true })
+      .eq('league_id', league.id).gt('created_at', lastRead)
+      .then(({ count }) => setUnreadAvisos(count ?? 0))
+  }, [league.id])
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'standings', label: '🏆 Tabla' },
     { id: 'my-teams',  label: '⚽ Mis equipos' },
     { id: 'matches',   label: '📋 Partidos' },
     { id: 'mundial',   label: '🌍 Mundial' },
+    { id: 'avisos',    label: unreadAvisos > 0 ? `📣 Avisos (${unreadAvisos})` : '📣 Avisos' },
     ...(isAdmin ? [{ id: 'admin' as Tab, label: '⚙️ Admin' }] : []),
   ]
 
@@ -143,6 +154,9 @@ export default function StandingsClient({
         />
       )}
       {tab === 'mundial' && <MundialTab matches={liveMatches} />}
+      {tab === 'avisos' && (
+        <AvisosTab leagueId={league.id} onRead={() => setUnreadAvisos(0)} />
+      )}
       {tab === 'admin' && isAdmin && (
         <AdminTab league={league} matches={liveMatches} players={players} router={router} />
       )}
@@ -2638,14 +2652,14 @@ function AnnouncementSection({ players, league }: { players: Player[]; league: L
   async function send() {
     if (!title.trim() || !body.trim()) return
     setSending(true)
+    // Guardar en BD para la pestaña Avisos
+    await supabase.from('announcements').insert({ league_id: league.id, title: title.trim(), body: body.trim() })
+    // Enviar push
     const { data: { session } } = await supabase.auth.getSession()
     const userIds = players.map(p => p.user_id).filter(Boolean) as string[]
     await fetch('/api/push/announce', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token ?? ''}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
       body: JSON.stringify({ title: title.trim(), body: body.trim(), url: '/standings', userIds, leagueId: league.id }),
     })
     setSending(false)
@@ -2686,6 +2700,53 @@ function AnnouncementSection({ players, league }: { players: Player[]; league: L
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── PESTAÑA AVISOS ───────────────────────────────────────────
+
+interface Announcement { id: string; title: string; body: string; created_at: string }
+
+function AvisosTab({ leagueId, onRead }: { leagueId: string; onRead: () => void }) {
+  const [items, setItems] = useState<Announcement[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('announcements')
+      .select('id, title, body, created_at')
+      .eq('league_id', leagueId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setItems(data ?? [])
+        setLoading(false)
+        // Marcar como leídos
+        const key = `avisos_read_${leagueId}`
+        localStorage.setItem(key, new Date().toISOString())
+        onRead()
+      })
+  }, [leagueId])
+
+  if (loading) return <p className="text-center text-sm text-[var(--text-secondary)] py-10">Cargando…</p>
+
+  if (items.length === 0) return (
+    <div className="text-center py-16 text-[var(--text-secondary)]">
+      <p className="text-3xl mb-2">📭</p>
+      <p className="text-sm">Sin avisos todavía</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      {items.map(item => (
+        <div key={item.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
+          <p className="font-black text-sm">{item.title}</p>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5 whitespace-pre-wrap">{item.body}</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-2 opacity-60">
+            {new Date(item.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+      ))}
     </div>
   )
 }
