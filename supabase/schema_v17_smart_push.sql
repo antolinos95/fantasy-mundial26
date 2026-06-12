@@ -26,7 +26,7 @@ SELECT cron.schedule(
     FOR v_match IN
       SELECT * FROM matches
       WHERE status = 'scheduled'
-        AND match_date - interval '2 hours' BETWEEN now() AND now() + interval '60 minutes'
+        AND match_date - interval '12 hours' BETWEEN now() AND now() + interval '60 minutes'
     LOOP
       SELECT name INTO v_home FROM teams WHERE id = v_match.home_team_id;
       SELECT name INTO v_away FROM teams WHERE id = v_match.away_team_id;
@@ -68,7 +68,7 @@ SELECT cron.schedule(
       -- Enviar solo si hay alguien pendiente
       IF jsonb_array_length(v_user_ids) > 0 THEN
         PERFORM call_push_send(jsonb_build_object(
-          'title', '⏰ Cierre de mercado en 2 h',
+          'title', '⏰ Cierre de mercado en 12 h',
           'body',  'Pon tu porra y alineación para ' ||
                    coalesce(v_home,'?') || ' vs ' || coalesce(v_away,'?'),
           'url',   '/standings',
