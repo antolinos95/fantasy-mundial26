@@ -18,11 +18,15 @@ export async function POST(req: NextRequest) {
   if (!title || !body) return NextResponse.json({ error: 'Missing title or body' }, { status: 400 })
 
   // Insertar en todas las ligas
-  const { data: leagues } = await supabaseAdmin.from('leagues').select('id')
+  const { data: leagues, error: leaguesErr } = await supabaseAdmin.from('leagues').select('id')
+  if (leaguesErr) return NextResponse.json({ error: 'leagues: ' + leaguesErr.message }, { status: 500 })
+
+  let annErr = null
   if (leagues?.length) {
-    await supabaseAdmin.from('announcements').insert(
+    const { error } = await supabaseAdmin.from('announcements').insert(
       leagues.map(l => ({ league_id: l.id, title, body }))
     )
+    annErr = error?.message ?? null
   }
 
   // Push a todos los suscriptores (sin filtro de userIds)
@@ -34,5 +38,5 @@ export async function POST(req: NextRequest) {
   })
   const pushData = await pushRes.json()
 
-  return NextResponse.json({ leagues: leagues?.length ?? 0, push: pushData })
+  return NextResponse.json({ leagues: leagues?.length ?? 0, annErr, push: pushData })
 }
