@@ -45,7 +45,8 @@ export default function StandingsClient({
   const [tab, setTab]               = useState<Tab>('standings')
   const [myId, setMyId]             = useState<string | null>(null)
   const [isAdmin, setIsAdmin]       = useState(false)
-  const [liveScores, setLiveScores] = useState<Score[]>(scores)
+  const playerIds = new Set(players.map(p => p.id))
+  const [liveScores, setLiveScores] = useState<Score[]>(scores.filter(s => playerIds.has(s.player_id)))
   const [liveMatches, setLiveMatches] = useState<Match[]>(matches)
   const [matchesUpdatedAt, setMatchesUpdatedAt] = useState<Date | null>(null)
   const [showRules, setShowRules]   = useState(false)
@@ -65,7 +66,7 @@ export default function StandingsClient({
       .channel(`standings-${league.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'scores', filter: `league_id=eq.${league.id}` }, async () => {
         const { data } = await supabase.from('scores').select('*, player:players(*)').eq('league_id', league.id).order('points', { ascending: false })
-        if (data) setLiveScores(data)
+        if (data) setLiveScores(data.filter(s => playerIds.has(s.player_id)))
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, async () => {
         const { data } = await supabase.from('matches')
