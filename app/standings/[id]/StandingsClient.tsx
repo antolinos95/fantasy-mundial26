@@ -1679,6 +1679,12 @@ function AdminTab({ league, matches, players, router }: {
       {/* Bonificaciones de clasificación */}
       <QualificationBonusSection allTeams={allTeams} onAward={awardBonus} />
 
+      {/* Plantillas */}
+      <SquadEditorSection allTeams={allTeams} />
+
+      {/* Anuncio a la liga */}
+      <AnnouncementSection players={players} league={league} />
+
       {/* Modo Wildcard */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
         <div className="flex items-center justify-between">
@@ -2493,6 +2499,193 @@ function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── EDITOR DE PLANTILLAS ─────────────────────────────────────
+
+function SquadEditorSection({ allTeams }: { allTeams: import('../../../types').Team[] }) {
+  const [open, setOpen]       = useState(false)
+  const [teamId, setTeamId]   = useState('')
+  const [players, setPlayers] = useState<SquadPlayer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPos, setNewPos]   = useState<'GK'|'DF'|'MF'|'FW'>('FW')
+  const [newNum, setNewNum]   = useState('')
+  const [saving, setSaving]   = useState(false)
+
+  async function loadSquad(tid: string) {
+    setLoading(true)
+    const { data } = await supabase
+      .from('squad_players')
+      .select('id, team_id, name, position, shirt_number, api_id, photo_url')
+      .eq('team_id', tid)
+      .order('position').order('shirt_number', { nullsFirst: false })
+    setPlayers((data ?? []) as SquadPlayer[])
+    setLoading(false)
+  }
+
+  function onTeamChange(tid: string) {
+    setTeamId(tid)
+    setPlayers([])
+    if (tid) loadSquad(tid)
+  }
+
+  async function removePlayer(id: string) {
+    if (!confirm('¿Eliminar este jugador de la plantilla?')) return
+    await supabase.from('squad_players').delete().eq('id', id)
+    setPlayers(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function addPlayer() {
+    if (!newName.trim() || !teamId) return
+    setSaving(true)
+    const { data, error } = await supabase
+      .from('squad_players')
+      .insert({ team_id: teamId, name: newName.trim(), position: newPos, shirt_number: newNum ? parseInt(newNum) : null })
+      .select('id, team_id, name, position, shirt_number, api_id, photo_url')
+      .single()
+    setSaving(false)
+    if (error) { alert(error.message); return }
+    const posOrder = { GK: 0, DF: 1, MF: 2, FW: 3 }
+    setPlayers(prev => [...prev, data as SquadPlayer].sort((a, b) =>
+      (posOrder[a.position as keyof typeof posOrder] ?? 9) - (posOrder[b.position as keyof typeof posOrder] ?? 9)
+    ))
+    setNewName(''); setNewNum('')
+  }
+
+  const POS_COLORS: Record<string, string> = {
+    GK: 'bg-yellow-500/20 text-yellow-400',
+    DF: 'bg-blue-500/20 text-blue-400',
+    MF: 'bg-green-500/20 text-green-400',
+    FW: 'bg-red-500/20 text-red-400',
+  }
+
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--bg-elevated)] transition-colors">
+        <p className="font-bold text-sm">👥 Editar plantillas</p>
+        <span className="text-[var(--text-secondary)] text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          <select value={teamId} onChange={e => onTeamChange(e.target.value)}
+            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm">
+            <option value="">Selecciona un equipo…</option>
+            {allTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+
+          {loading && <p className="text-xs text-[var(--text-secondary)] text-center py-2">Cargando…</p>}
+
+          {!loading && teamId && (
+            <>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {players.length === 0
+                  ? <p className="text-xs text-[var(--text-secondary)] text-center py-3">Sin jugadores registrados</p>
+                  : players.map(p => (
+                    <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-elevated)]">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${POS_COLORS[p.position] ?? ''}`}>{p.position}</span>
+                      {p.shirt_number != null && <span className="text-xs text-[var(--text-secondary)] w-5 text-right">{p.shirt_number}</span>}
+                      <span className="flex-1 text-sm">{p.name}</span>
+                      <button onClick={() => removePlayer(p.id)}
+                        className="text-red-400 hover:text-red-300 text-xs px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors">
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                }
+              </div>
+
+              <div className="border-t border-[var(--border)] pt-3 space-y-2">
+                <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Añadir jugador</p>
+                <div className="flex gap-2">
+                  <select value={newPos} onChange={e => setNewPos(e.target.value as any)}
+                    className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm w-20">
+                    <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
+                  </select>
+                  <input value={newNum} onChange={e => setNewNum(e.target.value)} placeholder="Nº"
+                    className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm w-14 text-center" />
+                  <input value={newName} onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                    placeholder="Nombre del jugador"
+                    className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm" />
+                  <button onClick={addPlayer} disabled={saving || !newName.trim()}
+                    className="bg-[var(--accent)] text-white text-sm font-bold px-3 py-1.5 rounded-lg disabled:opacity-40">
+                    {saving ? '…' : '+'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ANUNCIOS A LA LIGA ───────────────────────────────────────
+
+function AnnouncementSection({ players, league }: { players: Player[]; league: League }) {
+  const [open, setOpen]       = useState(false)
+  const [title, setTitle]     = useState('')
+  const [body, setBody]       = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent]       = useState(false)
+
+  async function send() {
+    if (!title.trim() || !body.trim()) return
+    setSending(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const userIds = players.map(p => p.user_id).filter(Boolean) as string[]
+    await fetch('/api/push/announce', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ title: title.trim(), body: body.trim(), url: '/standings', userIds, leagueId: league.id }),
+    })
+    setSending(false)
+    setSent(true)
+    setTimeout(() => { setSent(false); setTitle(''); setBody('') }, 3000)
+  }
+
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--bg-elevated)] transition-colors">
+        <p className="font-bold text-sm">📣 Enviar anuncio</p>
+        <span className="text-[var(--text-secondary)] text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Título"
+            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm font-semibold"
+          />
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            placeholder="Mensaje…"
+            rows={3}
+            className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm resize-none"
+          />
+          <button
+            onClick={send}
+            disabled={sending || !title.trim() || !body.trim()}
+            className={`w-full py-2.5 rounded-xl text-sm font-black transition-colors disabled:opacity-40
+              ${sent ? 'bg-[var(--green)] text-black' : 'bg-[var(--accent)] text-white'}`}
+          >
+            {sent ? '✓ Enviado' : sending ? 'Enviando…' : `📣 Enviar a ${players.length} jugadores`}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
