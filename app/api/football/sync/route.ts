@@ -6,80 +6,89 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const FD_BASE = 'https://api.football-data.org/v4'
-const FD_KEY  = process.env.FOOTBALL_DATA_API_KEY!
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
+const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-// Protección anti rate-limit: football-data.org permite 10 req/min en plan gratuito.
-// Si el cron llama cada minuto y un sync usa ~6 req, dejamos margen.
+// Rate limit: mínimo 45s entre syncs
 let lastSyncMs = 0
-const MIN_INTERVAL_MS = 45_000 // mínimo 45s entre syncs
+const MIN_INTERVAL_MS = 45_000
 
-const TEAM_MAP: Record<string, string[]> = {
-  'Alemania':              ['Germany'],
-  'Arabia Saudita':        ['Saudi Arabia'],
-  'Argelia':               ['Algeria'],
-  'Argentina':             ['Argentina'],
-  'Australia':             ['Australia'],
-  'Austria':               ['Austria'],
-  'Bélgica':               ['Belgium'],
-  'Bosnia y Herzegovina':  ['Bosnia and Herzegovina', 'Bosnia & Herzegovina', 'Bosnia-Herzegovina'],
-  'Brasil':                ['Brazil'],
-  'Cabo Verde':            ['Cape Verde'],
-  'Canadá':                ['Canada'],
-  'Colombia':              ['Colombia'],
-  'Corea del Sur':         ['Korea Republic', 'South Korea'],
-  'Costa de Marfil':       ["Côte d'Ivoire", 'Ivory Coast'],
-  'Croacia':               ['Croatia'],
-  'Curazao':               ['Curaçao', 'Curacao'],
-  'DR Congo':              ['Congo DR', 'DR Congo', 'Democratic Republic of Congo'],
-  'Ecuador':               ['Ecuador'],
-  'Egipto':                ['Egypt'],
-  'Escocia':               ['Scotland'],
-  'España':                ['Spain'],
-  'Estados Unidos':        ['United States', 'USA'],
-  'Francia':               ['France'],
-  'Ghana':                 ['Ghana'],
-  'Haití':                 ['Haiti'],
-  'Inglaterra':            ['England'],
-  'Irak':                  ['Iraq'],
-  'Irán':                  ['Iran'],
-  'Japón':                 ['Japan'],
-  'Jordania':              ['Jordan'],
-  'Marruecos':             ['Morocco'],
-  'México':                ['Mexico'],
-  'Noruega':               ['Norway'],
-  'Nueva Zelanda':         ['New Zealand'],
-  'Países Bajos':          ['Netherlands'],
-  'Panamá':                ['Panama'],
-  'Paraguay':              ['Paraguay'],
-  'Portugal':              ['Portugal'],
-  'Qatar':                 ['Qatar'],
-  'República Checa':       ['Czech Republic', 'Czechia'],
-  'Senegal':               ['Senegal'],
-  'Sudáfrica':             ['South Africa'],
-  'Suecia':                ['Sweden'],
-  'Suiza':                 ['Switzerland'],
-  'Túnez':                 ['Tunisia'],
-  'Turquía':               ['Turkey', 'Türkiye'],
-  'Uruguay':               ['Uruguay'],
-  'Uzbekistán':            ['Uzbekistan'],
-}
-
-const EN_TO_ES: Record<string, string> = {}
-for (const [es, ens] of Object.entries(TEAM_MAP)) {
-  for (const en of ens) EN_TO_ES[en.toLowerCase()] = es
+// ESPN usa nombres en inglés; mapeamos a los nombres en español de nuestra BD
+const ESPN_TO_ES: Record<string, string> = {
+  'Germany': 'Alemania',
+  'Saudi Arabia': 'Arabia Saudita',
+  'Algeria': 'Argelia',
+  'Argentina': 'Argentina',
+  'Australia': 'Australia',
+  'Austria': 'Austria',
+  'Belgium': 'Bélgica',
+  'Bosnia-Herzegovina': 'Bosnia y Herzegovina',
+  'Bosnia & Herzegovina': 'Bosnia y Herzegovina',
+  'Bosnia and Herzegovina': 'Bosnia y Herzegovina',
+  'Brazil': 'Brasil',
+  'Cape Verde': 'Cabo Verde',
+  'Canada': 'Canadá',
+  'Colombia': 'Colombia',
+  'South Korea': 'Corea del Sur',
+  'Korea Republic': 'Corea del Sur',
+  "Côte d'Ivoire": 'Costa de Marfil',
+  'Ivory Coast': 'Costa de Marfil',
+  'Croatia': 'Croacia',
+  'Curaçao': 'Curazao',
+  'Curacao': 'Curazao',
+  'DR Congo': 'DR Congo',
+  'Congo DR': 'DR Congo',
+  'Democratic Republic of Congo': 'DR Congo',
+  'Ecuador': 'Ecuador',
+  'Egypt': 'Egipto',
+  'Scotland': 'Escocia',
+  'Spain': 'España',
+  'United States': 'Estados Unidos',
+  'USA': 'Estados Unidos',
+  'France': 'Francia',
+  'Ghana': 'Ghana',
+  'Haiti': 'Haití',
+  'England': 'Inglaterra',
+  'Iraq': 'Irak',
+  'Iran': 'Irán',
+  'Japan': 'Japón',
+  'Jordan': 'Jordania',
+  'Morocco': 'Marruecos',
+  'Mexico': 'México',
+  'Norway': 'Noruega',
+  'New Zealand': 'Nueva Zelanda',
+  'Netherlands': 'Países Bajos',
+  'Panama': 'Panamá',
+  'Paraguay': 'Paraguay',
+  'Portugal': 'Portugal',
+  'Qatar': 'Qatar',
+  'Czech Republic': 'República Checa',
+  'Czechia': 'República Checa',
+  'Senegal': 'Senegal',
+  'South Africa': 'Sudáfrica',
+  'Sweden': 'Suecia',
+  'Switzerland': 'Suiza',
+  'Tunisia': 'Túnez',
+  'Turkey': 'Turquía',
+  'Türkiye': 'Turquía',
+  'Uruguay': 'Uruguay',
+  'Uzbekistan': 'Uzbekistán',
 }
 
 function normalize(s: string) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
-function fdFetch(path: string) {
-  return fetch(`${FD_BASE}${path}`, {
-    headers: { 'X-Auth-Token': FD_KEY },
-    cache: 'no-store',
-  })
+// Parsea "78'", "45'+2'", "90'+3'" → minuto entero
+function parseMinute(displayValue: string): number {
+  const m = displayValue.match(/^(\d+)/)
+  return m ? parseInt(m[1]) : 0
+}
+
+function isAuthorized(req: NextRequest): boolean {
+  if (req.headers.get('x-push-secret') === process.env.PUSH_SECRET) return true
+  if (req.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`) return true
+  return false
 }
 
 interface NewEvent {
@@ -90,23 +99,11 @@ interface NewEvent {
   minute: number | null
 }
 
-function isAuthorized(req: NextRequest): boolean {
-  const pushSecret = req.headers.get('x-push-secret')
-  if (pushSecret === process.env.PUSH_SECRET) return true
-
-  // Vercel cron requests include this header automatically
-  const cronSecret = req.headers.get('authorization')
-  if (cronSecret === `Bearer ${process.env.CRON_SECRET}`) return true
-
-  return false
-}
-
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Rate-limit guard: si el cron se dispara más rápido de lo esperado, ignoramos
   const now = Date.now()
   if (now - lastSyncMs < MIN_INTERVAL_MS) {
     return NextResponse.json({ message: 'Too soon, skipped', nextIn: MIN_INTERVAL_MS - (now - lastSyncMs) })
@@ -115,11 +112,8 @@ export async function GET(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10)
 
-  // ─── Pre-check en DB: ¿hay partidos en ventana activa?
-  // Evita llamar a la API si no hay nada que sincronizar.
-  const windowStart = new Date(now - 3 * 60 * 60 * 1000).toISOString()  // hace 3h (partido largo)
-  const windowEnd   = new Date(now + 15 * 60 * 1000).toISOString()       // en 15min (kick-off próximo)
-
+  // Pre-check: ¿hay partidos en ventana activa en nuestra BD?
+  const windowEnd = new Date(now + 15 * 60 * 1000).toISOString()
   const { data: candidateMatches } = await supabaseAdmin
     .from('matches')
     .select('id, status, match_date')
@@ -127,45 +121,37 @@ export async function GET(req: NextRequest) {
     .gte('match_date', `${today}T00:00:00`)
     .lte('match_date', windowEnd)
 
-  const hasLiveOrSoon = (candidateMatches ?? []).some(m => {
+  const hasActive = (candidateMatches ?? []).some(m => {
     const kickoff = new Date(m.match_date).getTime()
     return m.status === 'live' || (kickoff >= now - 3 * 60 * 60 * 1000 && kickoff <= now + 15 * 60 * 1000)
   })
 
-  // Si hay partidos terminados hoy sin recalcular (status sigue en 'live' tras finalizar)
-  // igualmente los buscamos; si no hay nada en ventana activa y no hay live, salimos.
-  if (!hasLiveOrSoon && !(candidateMatches ?? []).some(m => m.status === 'live')) {
+  if (!hasActive) {
     return NextResponse.json({ message: 'No active match window', skipped: true })
   }
 
-  // ─── Fetch a la API solo de lo necesario
-  // IN_PLAY + PAUSED siempre. FINISHED solo si hay partidos que podrían haber terminado.
-  const fetches: Promise<Response>[] = [
-    fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=IN_PLAY`),
-    fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=PAUSED`),
-  ]
-
-  const hasPotentiallyFinished = (candidateMatches ?? []).some(m => {
-    const kickoff = new Date(m.match_date).getTime()
-    // Si arrancó hace más de 85 minutos podría haber terminado
-    return kickoff < now - 85 * 60 * 1000
+  // Una sola llamada ESPN da estado + marcador + eventos de todos los partidos del día
+  const dateStr = today.replace(/-/g, '')
+  const espnRes = await fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    cache: 'no-store',
   })
 
-  if (hasPotentiallyFinished) {
-    fetches.push(fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=FINISHED`))
+  if (!espnRes.ok) {
+    return NextResponse.json({ error: `ESPN error: ${espnRes.status}` }, { status: 502 })
   }
 
-  const responses = await Promise.all(fetches)
-  const jsons = await Promise.all(responses.map(r => r.ok ? r.json() : { matches: [] }))
+  const espnData = await espnRes.json()
+  const espnEvents: any[] = espnData.events ?? []
 
-  const fdMatches: any[] = [
-    ...(jsons[0]?.matches ?? []),
-    ...(jsons[1]?.matches ?? []),
-    ...(jsons[2]?.matches ?? []),
-  ]
+  // Filtrar solo partidos en juego o recién terminados
+  const activeEvents = espnEvents.filter(ev => {
+    const state = ev.competitions?.[0]?.status?.type?.state
+    return state === 'in' || state === 'post'
+  })
 
-  if (fdMatches.length === 0) {
-    return NextResponse.json({ message: 'No live matches from API', skipped: true })
+  if (activeEvents.length === 0) {
+    return NextResponse.json({ message: 'No live/finished matches in ESPN', skipped: true })
   }
 
   const [{ data: teams }, { data: ourMatches }] = await Promise.all([
@@ -183,70 +169,61 @@ export async function GET(req: NextRequest) {
   let synced = 0
   const log: string[] = []
 
-  // ─── Fetch de detalles (goles/tarjetas) en paralelo para todos los partidos live
-  const detailResults = await Promise.all(
-    fdMatches.map(fm => fdFetch(`/matches/${fm.id}`).then(r => r.ok ? r.json() : null))
-  )
-  const detailById: Record<number, any> = {}
-  fdMatches.forEach((fm, i) => { detailById[fm.id] = detailResults[i] })
+  for (const ev of activeEvents) {
+    const comp = ev.competitions?.[0]
+    if (!comp) continue
 
-  for (const fm of fdMatches) {
-    const homeEn = fm.homeTeam?.name ?? ''
-    const awayEn = fm.awayTeam?.name ?? ''
-    const homeEs = EN_TO_ES[homeEn.toLowerCase()]
-    const awayEs = EN_TO_ES[awayEn.toLowerCase()]
+    const competitors: any[] = comp.competitors ?? []
+    const homeComp = competitors.find((c: any) => c.homeAway === 'home')
+    const awayComp = competitors.find((c: any) => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
+
+    const homeEnName = homeComp.team?.displayName ?? ''
+    const awayEnName = awayComp.team?.displayName ?? ''
+    const homeEs = ESPN_TO_ES[homeEnName]
+    const awayEs = ESPN_TO_ES[awayEnName]
 
     if (!homeEs || !awayEs) {
-      log.push(`⚠ No mapping: ${homeEn} vs ${awayEn}`)
+      log.push(`⚠ No mapping: ${homeEnName} vs ${awayEnName}`)
       continue
     }
 
-    const homeId   = teamByEs[homeEs]
-    const awayId   = teamByEs[awayEs]
+    const homeId = teamByEs[homeEs]
+    const awayId = teamByEs[awayEs]
     const ourMatch = ourMatches?.find(m => m.home_team_id === homeId && m.away_team_id === awayId)
     if (!ourMatch) {
       log.push(`⚠ Not in DB: ${homeEs} vs ${awayEs}`)
       continue
     }
 
-    const fdStatus   = fm.status
-    const isLive     = ['IN_PLAY', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(fdStatus)
-    const isFinished = ['FINISHED', 'AWARDED'].includes(fdStatus)
+    const statusType = comp.status?.type ?? {}
+    const state = statusType.state // 'in' | 'post' | 'pre'
+    const statusName: string = statusType.name ?? '' // STATUS_IN_PROGRESS, STATUS_HALFTIME, STATUS_FINAL, STATUS_FULL_TIME...
 
-    const score = fm.score ?? {}
-    let fdHomeGoals: number | null = null
-    let fdAwayGoals: number | null = null
+    const isLive     = state === 'in'
+    const isFinished = state === 'post'
 
-    if (fdStatus === 'EXTRA_TIME') {
-      fdHomeGoals = score.extraTime?.home ?? score.fullTime?.home ?? null
-      fdAwayGoals = score.extraTime?.away ?? score.fullTime?.away ?? null
-    } else if (fdStatus === 'PENALTY_SHOOTOUT') {
-      fdHomeGoals = score.penalties?.home ?? score.fullTime?.home ?? null
-      fdAwayGoals = score.penalties?.away ?? score.fullTime?.away ?? null
-    } else {
-      fdHomeGoals = score.fullTime?.home ?? null
-      fdAwayGoals = score.fullTime?.away ?? null
-    }
+    const fdHomeGoals = parseInt(homeComp.score ?? '0') || 0
+    const fdAwayGoals = parseInt(awayComp.score ?? '0') || 0
 
     const updates: Record<string, any> = {}
-    if (fdHomeGoals !== null && fdHomeGoals !== ourMatch.home_goals) updates.home_goals = fdHomeGoals
-    if (fdAwayGoals !== null && fdAwayGoals !== ourMatch.away_goals) updates.away_goals = fdAwayGoals
+    if (fdHomeGoals !== ourMatch.home_goals) updates.home_goals = fdHomeGoals
+    if (fdAwayGoals !== ourMatch.away_goals) updates.away_goals = fdAwayGoals
     if (isLive     && ourMatch.status !== 'live')     updates.status = 'live'
     if (isFinished && ourMatch.status !== 'finished') updates.status = 'finished'
 
     // Corrección de hora si el partido arrancó tarde
-    if (
-      fdStatus === 'IN_PLAY' &&
-      ourMatch.status === 'scheduled' &&
-      fm.minute > 0 &&
-      fm.minute <= 45
-    ) {
-      const calculatedKickoff = new Date(Date.now() - fm.minute * 60 * 1000)
-      const scheduledKickoff  = new Date(ourMatch.match_date)
-      const diffMinutes = Math.abs(calculatedKickoff.getTime() - scheduledKickoff.getTime()) / 60000
-      if (diffMinutes > 5) {
-        updates.match_date = calculatedKickoff.toISOString()
-        log.push(`⏰ Kick-off retrasado ${Math.round(diffMinutes)} min: ${homeEs} vs ${awayEs}`)
+    if (isLive && ourMatch.status === 'scheduled') {
+      const displayClock: string = comp.status?.displayClock ?? ''
+      const elapsedMin = parseMinute(displayClock)
+      if (elapsedMin > 0 && elapsedMin <= 45) {
+        const calculatedKickoff = new Date(now - elapsedMin * 60 * 1000)
+        const scheduledKickoff  = new Date(ourMatch.match_date)
+        const diffMin = Math.abs(calculatedKickoff.getTime() - scheduledKickoff.getTime()) / 60000
+        if (diffMin > 5) {
+          updates.match_date = calculatedKickoff.toISOString()
+          log.push(`⏰ Kick-off retrasado ${Math.round(diffMin)} min: ${homeEs} vs ${awayEs}`)
+        }
       }
     }
 
@@ -256,20 +233,22 @@ export async function GET(req: NextRequest) {
     }
 
     if (isLive || isFinished) {
-      const detail = detailById[fm.id]
-      if (detail) {
-        const goals    = detail.goals    ?? fm.goals    ?? []
-        const bookings = detail.bookings ?? fm.bookings ?? []
-        const newEvents = await syncEvents(ourMatch.id, goals, bookings, homeId, awayId, isFinished)
-        log.push(`✓ Events ${homeEs} vs ${awayEs}: ${goals.length} goals, ${bookings.length} cards, ${newEvents.length} new`)
+      const details: any[] = comp.details ?? []
+      // ESPN team IDs para saber a qué equipo pertenece cada evento
+      const espnHomeId = homeComp.team?.id
+      const espnAwayId = awayComp.team?.id
 
-        if (newEvents.length > 0) {
-          const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
-          const homeGoals = fdHomeGoals ?? ourMatch.home_goals ?? 0
-          const awayGoals = fdAwayGoals ?? ourMatch.away_goals ?? 0
-          const notifCount = await sendEventNotifications(ourMatch.id, homeId, awayId, homeGoals, awayGoals, newEvents, teamNames)
-          log.push(`🔔 ${notifCount} notificaciones enviadas`)
-        }
+      const newEvents = await syncESPNEvents(
+        ourMatch.id, details, homeId, awayId, espnHomeId, espnAwayId, isFinished
+      )
+      log.push(`✓ Events ${homeEs} vs ${awayEs}: ${details.length} details, ${newEvents.length} new`)
+
+      if (newEvents.length > 0) {
+        const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
+        const notifCount = await sendEventNotifications(
+          ourMatch.id, homeId, awayId, fdHomeGoals, fdAwayGoals, newEvents, teamNames
+        )
+        log.push(`🔔 ${notifCount} notificaciones enviadas`)
       }
 
       if (isFinished) {
@@ -281,18 +260,23 @@ export async function GET(req: NextRequest) {
     synced++
   }
 
-  return NextResponse.json({ synced, total: fdMatches.length, log })
+  return NextResponse.json({ synced, total: activeEvents.length, log })
 }
 
-async function syncEvents(
+async function syncESPNEvents(
   matchId: string,
-  goals: any[],
-  bookings: any[],
+  details: any[],
   homeTeamId: string,
   awayTeamId: string,
+  espnHomeId: string,
+  espnAwayId: string,
   isFinished: boolean,
 ): Promise<NewEvent[]> {
-  if (goals.length === 0 && bookings.length === 0) return []
+  // Filtrar solo goles y tarjetas rojas
+  const relevant = details.filter(d =>
+    (d.scoringPlay && !d.shootout) || d.ownGoal || d.redCard
+  )
+  if (relevant.length === 0) return []
 
   const { data: squadPlayers } = await supabaseAdmin
     .from('squad_players')
@@ -306,9 +290,6 @@ async function syncEvents(
     await supabaseAdmin.from('player_events').delete().eq('match_id', matchId)
   }
 
-  const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: number | null }[] = []
-  const newEventsMeta: NewEvent[] = []
-
   function resolvePlayer(name: string) {
     const norm = normalize(name)
     return squad.find(p => {
@@ -318,26 +299,39 @@ async function syncEvents(
     })
   }
 
-  for (const goal of goals) {
-    const scorerName: string = goal.scorer?.name ?? goal.scorer?.shortName ?? ''
-    if (!scorerName) continue
+  function espnTeamToOurId(espnTeamId: string): string {
+    return espnTeamId === espnHomeId ? homeTeamId : awayTeamId
+  }
 
-    const minute: number = goal.minute ?? 0
-    const goalType: string = goal.type ?? 'REGULAR'
+  const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: number | null }[] = []
+  const newEventsMeta: NewEvent[] = []
+
+  for (const d of relevant) {
+    const playerName: string = d.athletesInvolved?.[0]?.displayName ?? ''
+    if (!playerName) continue
+
+    const minute = parseMinute(d.clock?.displayValue ?? '') || null
+    const teamId = espnTeamToOurId(d.team?.id)
 
     let eventType: string
-    if (goalType === 'OWN') {
+    if (d.ownGoal) {
       eventType = 'own_goal'
-    } else if (goalType === 'PENALTY' && minute === 0) {
-      eventType = 'penalty_shootout'
-    } else if (minute > 90) {
+    } else if (d.redCard) {
+      eventType = 'red_card'
+    } else if (d.scoringPlay && d.penaltyKick) {
+      eventType = 'goal' // penalti en juego (no tanda)
+    } else if (d.scoringPlay && (minute ?? 0) > 90) {
       eventType = 'goal_extra_time'
     } else {
       eventType = 'goal'
     }
 
-    const sp = resolvePlayer(scorerName)
-    if (!sp) continue
+    const sp = resolvePlayer(playerName)
+    if (!sp) {
+      // Si el gol es en propia meta, el teamId puede ser el del equipo que la metió
+      // pero el jugador pertenece al equipo contrario — reintentamos sin filtrar por equipo
+      continue
+    }
 
     if (!isFinished) {
       const { count } = await supabaseAdmin.from('player_events')
@@ -347,28 +341,10 @@ async function syncEvents(
       if ((count ?? 0) > 0) continue
     }
 
-    toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute: minute || null })
-    if (!isFinished) newEventsMeta.push({ squad_player_id: sp.id, player_name: sp.name, team_id: sp.team_id, event_type: eventType, minute: minute || null })
-  }
-
-  for (const booking of bookings) {
-    if (booking.card !== 'RED_CARD' && booking.card !== 'YELLOW_RED_CARD') continue
-    const playerName: string = booking.player?.name ?? booking.player?.shortName ?? ''
-    if (!playerName) continue
-
-    const sp = resolvePlayer(playerName)
-    if (!sp) continue
-
+    toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute })
     if (!isFinished) {
-      const { count } = await supabaseAdmin.from('player_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('match_id', matchId).eq('squad_player_id', sp.id)
-        .eq('event_type', 'red_card')
-      if ((count ?? 0) > 0) continue
+      newEventsMeta.push({ squad_player_id: sp.id, player_name: sp.name, team_id: sp.team_id, event_type: eventType, minute })
     }
-
-    toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: 'red_card', minute: booking.minute || null })
-    if (!isFinished) newEventsMeta.push({ squad_player_id: sp.id, player_name: sp.name, team_id: sp.team_id, event_type: 'red_card', minute: booking.minute || null })
   }
 
   if (toInsert.length > 0) {
@@ -405,11 +381,7 @@ async function sendEventNotifications(
   for (const row of ownership) {
     const p = row.players as any
     if (p?.user_id) {
-      ownerByTeam[row.team_id] = {
-        userId: p.user_id,
-        playerId: row.player_id,
-        ownerName: p.name ?? '?',
-      }
+      ownerByTeam[row.team_id] = { userId: p.user_id, playerId: row.player_id, ownerName: p.name ?? '?' }
     }
   }
 
@@ -423,7 +395,7 @@ async function sendEventNotifications(
   const pushes: Promise<any>[] = []
 
   for (const ev of newEvents) {
-    const isGoal = ['goal', 'goal_extra_time', 'penalty_shootout'].includes(ev.event_type)
+    const isGoal = ['goal', 'goal_extra_time'].includes(ev.event_type)
     const isOwn  = ev.event_type === 'own_goal'
     const isRed  = ev.event_type === 'red_card'
     const emoji  = isGoal ? '⚽' : isOwn ? '⚽🙈' : isRed ? '🟥' : '📌'
