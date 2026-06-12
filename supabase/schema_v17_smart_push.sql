@@ -81,3 +81,55 @@ SELECT cron.schedule(
   $body$
   $$
 );
+
+-- Cron cada 5 min: avisa cuando un partido tuyo está a punto de empezar
+SELECT cron.unschedule('push-match-starting')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'push-match-starting');
+
+SELECT cron.schedule(
+  'push-match-starting',
+  '*/5 * * * *',
+  $$
+  DO $body$
+  DECLARE
+    v_match    matches%ROWTYPE;
+    v_home     text;
+    v_away     text;
+    v_player   RECORD;
+    v_user_ids jsonb := '[]'::jsonb;
+  BEGIN
+    -- Partidos que empiezan en los próximos 5 minutos
+    FOR v_match IN
+      SELECT * FROM matches
+      WHERE status = 'scheduled'
+        AND match_date BETWEEN now() AND now() + interval '5 minutes'
+    LOOP
+      SELECT name INTO v_home FROM teams WHERE id = v_match.home_team_id;
+      SELECT name INTO v_away FROM teams WHERE id = v_match.away_team_id;
+
+      v_user_ids := '[]'::jsonb;
+
+      FOR v_player IN
+        SELECT DISTINCT p.user_id
+        FROM drafted_teams dt
+        JOIN players p ON p.id = dt.player_id
+        WHERE dt.team_id IN (v_match.home_team_id, v_match.away_team_id)
+          AND p.user_id IS NOT NULL
+      LOOP
+        v_user_ids := v_user_ids || jsonb_build_array(v_player.user_id::text);
+      END LOOP;
+
+      IF jsonb_array_length(v_user_ids) > 0 THEN
+        PERFORM call_push_send(jsonb_build_object(
+          'title', '🔴 ¡Partido a punto de empezar!',
+          'body',  coalesce(v_home,'?') || ' vs ' || coalesce(v_away,'?') || ' comienza ahora',
+          'url',   '/standings',
+          'userIds', v_user_ids
+        ));
+      END IF;
+
+    END LOOP;
+  END;
+  $body$
+  $$
+);
