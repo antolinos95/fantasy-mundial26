@@ -10,6 +10,11 @@ const FD_BASE = 'https://api.football-data.org/v4'
 const FD_KEY  = process.env.FOOTBALL_DATA_API_KEY!
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
+// Protección anti rate-limit: football-data.org permite 10 req/min en plan gratuito.
+// Si el cron llama cada minuto y un sync usa ~6 req, dejamos margen.
+let lastSyncMs = 0
+const MIN_INTERVAL_MS = 45_000 // mínimo 45s entre syncs
+
 const TEAM_MAP: Record<string, string[]> = {
   'Alemania':              ['Germany'],
   'Arabia Saudita':        ['Saudi Arabia'],
@@ -71,7 +76,10 @@ function normalize(s: string) {
 }
 
 function fdFetch(path: string) {
-  return fetch(`${FD_BASE}${path}`, { headers: { 'X-Auth-Token': FD_KEY } })
+  return fetch(`${FD_BASE}${path}`, {
+    headers: { 'X-Auth-Token': FD_KEY },
+    cache: 'no-store',
+  })
 }
 
 interface NewEvent {
@@ -82,35 +90,82 @@ interface NewEvent {
   minute: number | null
 }
 
-// ─── Mejora #3: notified eliminado de player_events, la deduplicación la hace
-// el check existencial antes de insertar. Schema v18 ya no es necesario.
+function isAuthorized(req: NextRequest): boolean {
+  const pushSecret = req.headers.get('x-push-secret')
+  if (pushSecret === process.env.PUSH_SECRET) return true
+
+  // Vercel cron requests include this header automatically
+  const cronSecret = req.headers.get('authorization')
+  if (cronSecret === `Bearer ${process.env.CRON_SECRET}`) return true
+
+  return false
+}
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-push-secret')
-  if (secret !== process.env.PUSH_SECRET) {
+  if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Rate-limit guard: si el cron se dispara más rápido de lo esperado, ignoramos
+  const now = Date.now()
+  if (now - lastSyncMs < MIN_INTERVAL_MS) {
+    return NextResponse.json({ message: 'Too soon, skipped', nextIn: MIN_INTERVAL_MS - (now - lastSyncMs) })
+  }
+  lastSyncMs = now
+
   const today = new Date().toISOString().slice(0, 10)
 
-  const [inPlayRes, pausedRes, finishedRes] = await Promise.all([
+  // ─── Pre-check en DB: ¿hay partidos en ventana activa?
+  // Evita llamar a la API si no hay nada que sincronizar.
+  const windowStart = new Date(now - 3 * 60 * 60 * 1000).toISOString()  // hace 3h (partido largo)
+  const windowEnd   = new Date(now + 15 * 60 * 1000).toISOString()       // en 15min (kick-off próximo)
+
+  const { data: candidateMatches } = await supabaseAdmin
+    .from('matches')
+    .select('id, status, match_date')
+    .neq('status', 'finished')
+    .gte('match_date', `${today}T00:00:00`)
+    .lte('match_date', windowEnd)
+
+  const hasLiveOrSoon = (candidateMatches ?? []).some(m => {
+    const kickoff = new Date(m.match_date).getTime()
+    return m.status === 'live' || (kickoff >= now - 3 * 60 * 60 * 1000 && kickoff <= now + 15 * 60 * 1000)
+  })
+
+  // Si hay partidos terminados hoy sin recalcular (status sigue en 'live' tras finalizar)
+  // igualmente los buscamos; si no hay nada en ventana activa y no hay live, salimos.
+  if (!hasLiveOrSoon && !(candidateMatches ?? []).some(m => m.status === 'live')) {
+    return NextResponse.json({ message: 'No active match window', skipped: true })
+  }
+
+  // ─── Fetch a la API solo de lo necesario
+  // IN_PLAY + PAUSED siempre. FINISHED solo si hay partidos que podrían haber terminado.
+  const fetches: Promise<Response>[] = [
     fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=IN_PLAY`),
     fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=PAUSED`),
-    fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=FINISHED`),
-  ])
+  ]
 
-  const inPlayData   = inPlayRes.ok   ? await inPlayRes.json()   : { matches: [] }
-  const pausedData   = pausedRes.ok   ? await pausedRes.json()   : { matches: [] }
-  const finishedData = finishedRes.ok ? await finishedRes.json() : { matches: [] }
+  const hasPotentiallyFinished = (candidateMatches ?? []).some(m => {
+    const kickoff = new Date(m.match_date).getTime()
+    // Si arrancó hace más de 85 minutos podría haber terminado
+    return kickoff < now - 85 * 60 * 1000
+  })
+
+  if (hasPotentiallyFinished) {
+    fetches.push(fdFetch(`/competitions/WC/matches?dateFrom=${today}&dateTo=${today}&status=FINISHED`))
+  }
+
+  const responses = await Promise.all(fetches)
+  const jsons = await Promise.all(responses.map(r => r.ok ? r.json() : { matches: [] }))
 
   const fdMatches: any[] = [
-    ...(inPlayData.matches   ?? []),
-    ...(pausedData.matches   ?? []),
-    ...(finishedData.matches ?? []),
+    ...(jsons[0]?.matches ?? []),
+    ...(jsons[1]?.matches ?? []),
+    ...(jsons[2]?.matches ?? []),
   ]
 
   if (fdMatches.length === 0) {
-    return NextResponse.json({ message: 'No matches today', synced: 0 })
+    return NextResponse.json({ message: 'No live matches from API', skipped: true })
   }
 
   const [{ data: teams }, { data: ourMatches }] = await Promise.all([
@@ -128,16 +183,12 @@ export async function GET(req: NextRequest) {
   let synced = 0
   const log: string[] = []
 
-  // ─── Mejora #4: fetch detalles de todos los partidos en paralelo
-  const matchesNeedingDetail = fdMatches.filter(fm => {
-    const s = fm.status
-    return ['IN_PLAY', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT', 'FINISHED', 'AWARDED'].includes(s)
-  })
+  // ─── Fetch de detalles (goles/tarjetas) en paralelo para todos los partidos live
   const detailResults = await Promise.all(
-    matchesNeedingDetail.map(fm => fdFetch(`/matches/${fm.id}`).then(r => r.ok ? r.json() : null))
+    fdMatches.map(fm => fdFetch(`/matches/${fm.id}`).then(r => r.ok ? r.json() : null))
   )
   const detailById: Record<number, any> = {}
-  matchesNeedingDetail.forEach((fm, i) => { detailById[fm.id] = detailResults[i] })
+  fdMatches.forEach((fm, i) => { detailById[fm.id] = detailResults[i] })
 
   for (const fm of fdMatches) {
     const homeEn = fm.homeTeam?.name ?? ''
@@ -162,8 +213,6 @@ export async function GET(req: NextRequest) {
     const isLive     = ['IN_PLAY', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(fdStatus)
     const isFinished = ['FINISHED', 'AWARDED'].includes(fdStatus)
 
-    // ─── Mejora #2: score.fullTime refleja el marcador actual también en directo.
-    // score.halfTime solo tiene valor al terminar el primer tiempo.
     const score = fm.score ?? {}
     let fdHomeGoals: number | null = null
     let fdAwayGoals: number | null = null
@@ -175,7 +224,6 @@ export async function GET(req: NextRequest) {
       fdHomeGoals = score.penalties?.home ?? score.fullTime?.home ?? null
       fdAwayGoals = score.penalties?.away ?? score.fullTime?.away ?? null
     } else {
-      // IN_PLAY, PAUSED, FINISHED: fullTime es el marcador actual
       fdHomeGoals = score.fullTime?.home ?? null
       fdAwayGoals = score.fullTime?.away ?? null
     }
@@ -183,10 +231,10 @@ export async function GET(req: NextRequest) {
     const updates: Record<string, any> = {}
     if (fdHomeGoals !== null && fdHomeGoals !== ourMatch.home_goals) updates.home_goals = fdHomeGoals
     if (fdAwayGoals !== null && fdAwayGoals !== ourMatch.away_goals) updates.away_goals = fdAwayGoals
+    if (isLive     && ourMatch.status !== 'live')     updates.status = 'live'
     if (isFinished && ourMatch.status !== 'finished') updates.status = 'finished'
 
-    // ─── Mejora #5: solo corregir hora si el partido acaba de pasar a IN_PLAY
-    // (nuestro status era 'scheduled' pero la API ya reporta minuto > 0)
+    // Corrección de hora si el partido arrancó tarde
     if (
       fdStatus === 'IN_PLAY' &&
       ourMatch.status === 'scheduled' &&
@@ -198,7 +246,7 @@ export async function GET(req: NextRequest) {
       const diffMinutes = Math.abs(calculatedKickoff.getTime() - scheduledKickoff.getTime()) / 60000
       if (diffMinutes > 5) {
         updates.match_date = calculatedKickoff.toISOString()
-        log.push(`⏰ Inicio retrasado ${Math.round(diffMinutes)} min: ${homeEs} vs ${awayEs}`)
+        log.push(`⏰ Kick-off retrasado ${Math.round(diffMinutes)} min: ${homeEs} vs ${awayEs}`)
       }
     }
 
@@ -213,7 +261,7 @@ export async function GET(req: NextRequest) {
         const goals    = detail.goals    ?? fm.goals    ?? []
         const bookings = detail.bookings ?? fm.bookings ?? []
         const newEvents = await syncEvents(ourMatch.id, goals, bookings, homeId, awayId, isFinished)
-        log.push(`✓ Events ${homeEs} vs ${awayEs}: ${goals.length} goals, ${bookings.length} bookings, ${newEvents.length} new`)
+        log.push(`✓ Events ${homeEs} vs ${awayEs}: ${goals.length} goals, ${bookings.length} cards, ${newEvents.length} new`)
 
         if (newEvents.length > 0) {
           const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
@@ -281,7 +329,6 @@ async function syncEvents(
     if (goalType === 'OWN') {
       eventType = 'own_goal'
     } else if (goalType === 'PENALTY' && minute === 0) {
-      // Penalti en tanda (minute=0 es la convención de la API para tandas)
       eventType = 'penalty_shootout'
     } else if (minute > 90) {
       eventType = 'goal_extra_time'
@@ -331,7 +378,6 @@ async function syncEvents(
   return newEventsMeta
 }
 
-// Una notificación por evento: llega en el momento en que ocurre
 async function sendEventNotifications(
   matchId: string,
   homeTeamId: string,
@@ -355,7 +401,6 @@ async function sendEventNotifications(
 
   const lineupSet = new Set((lineups ?? []).map(l => `${l.player_id}:${l.squad_player_id}`))
 
-  // { teamId → { userId, playerId, ownerName } }
   const ownerByTeam: Record<string, { userId: string; playerId: string; ownerName: string }> = {}
   for (const row of ownership) {
     const p = row.players as any
@@ -384,13 +429,11 @@ async function sendEventNotifications(
     const emoji  = isGoal ? '⚽' : isOwn ? '⚽🙈' : isRed ? '🟥' : '📌'
     const minuteStr = ev.minute ? ` ${ev.minute}'` : ''
 
-    // ¿Tiene el dueño del equipo que protagoniza el evento al jugador seleccionado?
     const scoringOwner = ownerByTeam[ev.team_id]
     const scoringOwnerHasPlayer = scoringOwner
       ? lineupSet.has(`${scoringOwner.playerId}:${ev.squad_player_id}`)
       : false
 
-    // Construir el marcador con nombres de dueños, desde la perspectiva de cada receptor
     function buildTitle(recipientUserId: string) {
       const homeLabel = homeOwner?.userId === recipientUserId ? 'Tú' : (homeOwner?.ownerName ?? null)
       const awayLabel = awayOwner?.userId === recipientUserId ? 'Tú' : (awayOwner?.ownerName ?? null)
@@ -399,7 +442,6 @@ async function sendEventNotifications(
       return `${homeStr} ${homeGoals} - ${awayStr} ${awayGoals}`
     }
 
-    // Cuerpo: jugador + minuto + ⭐ si el dueño del equipo lo tiene seleccionado
     const body = `${emoji} ${ev.player_name}${minuteStr}${scoringOwnerHasPlayer ? ' ⭐' : ''}`
 
     const recipients = [homeOwner, awayOwner].filter(Boolean) as typeof homeOwner[]

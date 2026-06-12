@@ -1125,8 +1125,8 @@ function MatchesTab({
                       </p>
                     )}
 
-                    {/* Eventos en vivo */}
-                    {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
+                    {/* Eventos en vivo y finalizados */}
+                    {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime' || m.status === 'finished') && (
                       <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
                     )}
 
@@ -1324,7 +1324,7 @@ function MatchesTab({
                     </div>
                     <span className="text-lg">{m.away_team?.flag_emoji}</span>
                   </div>
-                  {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
+                  {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime' || m.status === 'finished') && (
                     <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
                   )}
                   {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
