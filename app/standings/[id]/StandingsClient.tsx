@@ -776,6 +776,9 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
           : <p className="text-sm text-[var(--text-secondary)]">No enviaste porra</p>}
       </div>
 
+      {/* Eventos del partido */}
+      <FinishedMatchEvents matchId={match.id} homeTeamId={match.home_team_id} />
+
       {/* Resumen jugadores */}
       <div className="border-t border-[var(--border)] pt-3">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">⭐ Tus jugadores</p>
@@ -2244,6 +2247,47 @@ function PlayerSettingsModal({ leagueId, playerId, currentName, isAdmin, onClose
             </button>
             {isAdmin && <p className="text-xs text-[var(--text-secondary)] mt-2 text-center">Eres admin — no puedes salir de tu propia liga.</p>}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId: string | null }) {
+  const [events, setEvents] = useState<any[]>([])
+
+  useEffect(() => {
+    supabase.from('player_events').select('*, squad_player:squad_players(name, team_id)')
+      .eq('match_id', matchId).order('minute')
+      .then(({ data }) => setEvents(data ?? []))
+  }, [matchId])
+
+  if (events.length === 0) return null
+
+  const EVENT_ICON: Record<string, string> = {
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
+  }
+
+  const home = events.filter(e => e.squad_player?.team_id === homeTeamId)
+  const away = events.filter(e => e.squad_player?.team_id !== homeTeamId)
+
+  return (
+    <div className="border-t border-[var(--border)] pt-3 mb-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">📋 Eventos</p>
+      <div className="flex justify-between gap-2 text-xs">
+        <div className="space-y-0.5">
+          {home.map(e => (
+            <p key={e.id} className="text-[var(--text-secondary)]">
+              {EVENT_ICON[e.event_type]} {e.squad_player?.name}{e.minute ? ` ${e.minute}'` : ''}
+            </p>
+          ))}
+        </div>
+        <div className="space-y-0.5 text-right">
+          {away.map(e => (
+            <p key={e.id} className="text-[var(--text-secondary)]">
+              {e.minute ? `${e.minute}' ` : ''}{e.squad_player?.name} {EVENT_ICON[e.event_type]}
+            </p>
+          ))}
         </div>
       </div>
     </div>
