@@ -18,7 +18,7 @@ const TEAM_MAP: Record<string, string[]> = {
   'Australia':             ['Australia'],
   'Austria':               ['Austria'],
   'Bélgica':               ['Belgium'],
-  'Bosnia y Herzegovina':  ['Bosnia and Herzegovina', 'Bosnia & Herzegovina'],
+  'Bosnia y Herzegovina':  ['Bosnia and Herzegovina', 'Bosnia & Herzegovina', 'Bosnia-Herzegovina'],
   'Brasil':                ['Brazil'],
   'Cabo Verde':            ['Cape Verde'],
   'Canadá':                ['Canada'],
