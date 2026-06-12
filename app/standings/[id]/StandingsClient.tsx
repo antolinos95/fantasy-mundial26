@@ -687,11 +687,17 @@ function AllPredictionsReveal({ match, players, leagueId }: {
                 )}
                 {plLineup.length > 0 && (
                   <div className="flex flex-wrap gap-1">
-                    {plLineup.map((l, i) => (
-                      <span key={i} className="text-[11px] bg-[var(--bg-surface)] px-2 py-0.5 rounded-lg">
-                        {l.squad_player.name}
-                      </span>
-                    ))}
+                    {plLineup.map((l, i) => {
+                      const evs     = events.filter(e => e.squad_player_id === l.squad_player_id)
+                      const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
+                      const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
+                      const cls     = hasBad ? 'bg-red-900/40 border border-[var(--red)]' : hasGoal ? 'bg-green-900/40 border border-[var(--green)]' : 'bg-[var(--bg-surface)]'
+                      return (
+                        <span key={i} className={`text-[11px] px-2 py-0.5 rounded-lg ${cls}`}>
+                          {l.squad_player.name}
+                        </span>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -791,8 +797,11 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
                 const sp  = l.squad_player
                 const pts = playerPts(sp.id)
                 const evs = events.filter(e => e.squad_player_id === sp.id)
+                const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
+                const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
+                const rowCls  = hasBad ? 'bg-red-900/30 border border-[var(--red)]' : hasGoal ? 'bg-green-900/30 border border-[var(--green)]' : 'bg-[var(--bg-elevated)]'
                 return (
-                  <div key={i} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-2 py-1.5">
+                  <div key={i} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${rowCls}`}>
                     <img src={sp.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-7 h-7 rounded-full object-cover shrink-0"
                       onError={e => { (e.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
                     <span className="flex-1 text-sm truncate">{sp.name}</span>
