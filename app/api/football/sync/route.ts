@@ -126,13 +126,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'No active match window', skipped: true })
   }
 
-  // ESPN usa hora local americana — partidos a las 01:00 UTC pueden aparecer bajo el día anterior.
-  // Consultamos hoy y ayer en paralelo para no perder ningún partido nocturno.
-  const dateStr      = today.replace(/-/g, '')
-  const yesterday    = new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '')
-  const [espnRes, espnYestRes] = await Promise.all([
-    fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`,   { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
-    fetch(`${ESPN_BASE}/scoreboard?dates=${yesterday}`, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
+  // ESPN indexa los partidos en Eastern Time (EDT = UTC-4 en verano).
+  // Un partido a las 01:00 UTC = 21:00 ET del día anterior → hay que pedir ese día en ESPN.
+  // Calculamos la fecha ET actual y la pedimos junto con la siguiente para cubrir todos los casos.
+  const ET_OFFSET_MS = 4 * 60 * 60 * 1000 // EDT = UTC-4
+  const etNow        = new Date(now - ET_OFFSET_MS)
+  const etToday      = etNow.toISOString().slice(0, 10).replace(/-/g, '')
+  const etYesterday  = new Date(now - ET_OFFSET_MS - 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '')
+
+  const [espnRes, espnPrevRes] = await Promise.all([
+    fetch(`${ESPN_BASE}/scoreboard?dates=${etToday}`,     { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
+    fetch(`${ESPN_BASE}/scoreboard?dates=${etYesterday}`, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
   ])
 
   if (!espnRes.ok) {
@@ -140,8 +144,8 @@ export async function GET(req: NextRequest) {
   }
 
   const espnData     = await espnRes.json()
-  const espnYestData = espnYestRes.ok ? await espnYestRes.json() : { events: [] }
-  const espnEvents: any[] = [...(espnData.events ?? []), ...(espnYestData.events ?? [])]
+  const espnPrevData = espnPrevRes.ok ? await espnPrevRes.json() : { events: [] }
+  const espnEvents: any[] = [...(espnData.events ?? []), ...(espnPrevData.events ?? [])]
 
   // Quedarnos con partidos en juego o terminados (excluimos pre-partido sin datos)
   const activeEvents = espnEvents.filter(ev => {
