@@ -112,21 +112,16 @@ export async function GET(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10)
 
-  // Pre-check: ¿hay partidos en ventana activa en nuestra BD?
-  const windowEnd = new Date(now + 15 * 60 * 1000).toISOString()
+  // Pre-check: ¿hay partidos no finalizados hoy?
+  // Si los hay (aunque sean de hace horas), hay que consultar ESPN para actualizarlos.
   const { data: candidateMatches } = await supabaseAdmin
     .from('matches')
-    .select('id, status, match_date')
+    .select('id, status')
     .neq('status', 'finished')
     .gte('match_date', `${today}T00:00:00`)
-    .lte('match_date', windowEnd)
+    .lte('match_date', `${today}T23:59:59`)
 
-  const hasActive = (candidateMatches ?? []).some(m => {
-    const kickoff = new Date(m.match_date).getTime()
-    return m.status === 'live' || (kickoff >= now - 3 * 60 * 60 * 1000 && kickoff <= now + 15 * 60 * 1000)
-  })
-
-  if (!hasActive) {
+  if (!candidateMatches?.length) {
     return NextResponse.json({ message: 'No active match window', skipped: true })
   }
 
@@ -144,14 +139,15 @@ export async function GET(req: NextRequest) {
   const espnData = await espnRes.json()
   const espnEvents: any[] = espnData.events ?? []
 
-  // Filtrar solo partidos en juego o recién terminados
+  // Quedarnos con partidos en juego o terminados (excluimos pre-partido sin datos)
   const activeEvents = espnEvents.filter(ev => {
     const state = ev.competitions?.[0]?.status?.type?.state
     return state === 'in' || state === 'post'
   })
 
   if (activeEvents.length === 0) {
-    return NextResponse.json({ message: 'No live/finished matches in ESPN', skipped: true })
+    // No hay nada live ni terminado aún — partidos futuros, nada que hacer
+    return NextResponse.json({ message: 'Matches scheduled but not started yet', skipped: true })
   }
 
   const [{ data: teams }, { data: ourMatches }] = await Promise.all([
