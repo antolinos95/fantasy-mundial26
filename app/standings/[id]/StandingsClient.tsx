@@ -1346,7 +1346,16 @@ function MatchesTab({
                             <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
                           </>
                         )
-                        return <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                        return (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                            {m.match_date && (
+                              <span className="text-[9px] text-[var(--text-secondary)]">
+                                {new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
+                              </span>
+                            )}
+                          </div>
+                        )
                       })()}
                     </div>
                     <div className="flex-1 min-w-0 text-right">
