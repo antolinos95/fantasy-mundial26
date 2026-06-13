@@ -143,7 +143,7 @@ export default function StandingsClient({
         ))}
       </div>
 
-      {tab === 'standings' && <StandingsTab scores={liveScores} players={players} myId={myId} leagueId={league.id} />}
+      {tab === 'standings' && <StandingsTab scores={liveScores} players={players} myId={myId} leagueId={league.id} draftedTeams={draftedTeams} matches={liveMatches} />}
       {tab === 'my-teams'  && <MyTeamsTab myId={myId} draftedTeams={draftedTeams} players={players} leagueId={league.id} />}
       {tab === 'matches'   && (
         <MatchesTab
@@ -168,7 +168,7 @@ export default function StandingsClient({
 
 interface TieStats { hits: number; playerPts: number; wins: number }
 
-function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; players: Player[]; myId: string | null; leagueId: string }) {
+function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }: { scores: Score[]; players: Player[]; myId: string | null; leagueId: string; draftedTeams: DraftedTeam[]; matches: Match[] }) {
   const [topScorers, setTopScorers] = useState<(PlayerStat & { team_name?: string; flag?: string })[]>([])
   const [breakdownPlayer, setBreakdownPlayer] = useState<Player | null>(null)
   const [tie, setTie] = useState<Record<string, TieStats>>({})
@@ -209,10 +209,19 @@ function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; pl
         })))
       })
   }, [leagueId])
+  // Contador de partidos por jugador: jugados / total de sus equipos
+  function matchCount(playerId: string): { played: number; total: number } {
+    const teamIds = draftedTeams.filter(dt => dt.player_id === playerId).map(dt => dt.team_id)
+    const playerMatches = matches.filter(m => teamIds.includes(m.home_team_id ?? '') || teamIds.includes(m.away_team_id ?? ''))
+    const played = playerMatches.filter(m => m.status === 'finished').length
+    return { played, total: playerMatches.length }
+  }
+
   const entries = players.map(p => ({
     player: p,
     points: Number(scores.find(s => s.player_id === p.id)?.points ?? 0),
     t: tie[p.id] ?? { hits: 0, playerPts: 0, wins: 0 },
+    mc: matchCount(p.id),
   })).sort((a, b) =>
     b.points - a.points ||
     b.t.hits - a.t.hits ||             // 1º más porras acertadas
@@ -242,8 +251,11 @@ function StandingsTab({ scores, players, myId, leagueId }: { scores: Score[]; pl
               🎯 {e.t.hits} · ⭐ {fmtPts(e.t.playerPts)} · ✅ {e.t.wins}
             </span>
           </span>
-          <span className="font-black text-lg">{fmtPts(e.points)}</span>
-          <span className="text-xs text-[var(--text-secondary)]">pts</span>
+          <span className="text-right">
+            <span className="font-black text-lg">{fmtPts(e.points)}</span>
+            <span className="text-xs text-[var(--text-secondary)]"> pts</span>
+            <span className="block text-[10px] text-[var(--text-secondary)]">{e.mc.played}/{e.mc.total} partidos</span>
+          </span>
           <span className="text-[var(--text-secondary)] text-xs ml-1">›</span>
         </button>
       ))}
@@ -1056,7 +1068,7 @@ function MatchesTab({
               <p key={m.id} className="text-xs flex items-center gap-2">
                 <span>{m.home_team?.flag_emoji} {m.home_team?.name} vs {m.away_team?.name} {m.away_team?.flag_emoji}</span>
                 <span className="text-[var(--text-secondary)] ml-auto">
-                  {m.match_date && new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {m.match_date && new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
                 </span>
               </p>
             ))}
@@ -1138,7 +1150,7 @@ function MatchesTab({
                           ? <span className="text-red-400 font-semibold">🔴 EN VIVO</span>
                           : matchLiveState(m) === 'halftime'
                           ? <span className="text-[var(--yellow)] font-semibold">⏸ Descanso</span>
-                          : new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })
+                          : new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)
                         }
                         {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
                       </p>
@@ -2057,7 +2069,7 @@ function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
           </div>
           {match.match_date && (
             <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              {new Date(match.match_date).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' })}
+              {new Date(match.match_date).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)}
             </p>
           )}
         </div>
