@@ -9,9 +9,9 @@ const supabaseAdmin = createClient(
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
 const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-// Rate limit: mínimo 45s entre syncs
+// Rate limit mínimo para evitar llamadas simultáneas en paralelo
 let lastSyncMs = 0
-const MIN_INTERVAL_MS = 45_000
+const MIN_INTERVAL_MS = 10_000
 
 // ESPN usa nombres en inglés; mapeamos a los nombres en español de nuestra BD
 const ESPN_TO_ES: Record<string, string> = {
@@ -106,9 +106,10 @@ export async function GET(req: NextRequest) {
 
   const now = Date.now()
   if (now - lastSyncMs < MIN_INTERVAL_MS) {
-    return NextResponse.json({ message: 'Too soon, skipped', nextIn: MIN_INTERVAL_MS - (now - lastSyncMs) })
+    return NextResponse.json({ message: 'Too soon, skipped' })
   }
   lastSyncMs = now
+
 
   const today = new Date().toISOString().slice(0, 10)
 
