@@ -158,12 +158,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'Matches scheduled but not started yet', skipped: true })
   }
 
+  const yesterday = new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const [{ data: teams }, { data: ourMatches }] = await Promise.all([
     supabaseAdmin.from('teams').select('id, name'),
     supabaseAdmin
       .from('matches')
       .select('id, league_id, home_team_id, away_team_id, home_goals, away_goals, status, match_date')
-      .gte('match_date', `${today}T00:00:00`)
+      .neq('status', 'finished')   // nunca reprocessar partidos ya finalizados
+      .gte('match_date', `${yesterday}T00:00:00`)
       .lte('match_date', `${today}T23:59:59`),
   ])
 

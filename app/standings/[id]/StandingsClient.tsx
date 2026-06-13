@@ -1097,7 +1097,7 @@ function MatchesTab({
           <span className="text-lg">{m.away_team?.flag_emoji}</span>
         </div>
         {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
-          <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+          <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={state === 'live' || state === 'halftime'} />
         )}
         {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
           m.home_team_id && m.away_team_id &&
@@ -1113,7 +1113,7 @@ function MatchesTab({
 
   return (
     <div className="space-y-8">
-      {updatedAt && (
+      {updatedAt && matches.some(m => matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime') && (
         <p className="text-[10px] text-center text-[var(--text-muted)] -mb-4">
           Última actualización: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
         </p>
@@ -1218,7 +1218,7 @@ function MatchesTab({
 
                     {/* Eventos en vivo y finalizados */}
                     {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime' || m.status === 'finished') && (
-                      <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+                      <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime'} />
                     )}
 
                     {/* Wildcard */}
@@ -2355,7 +2355,7 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
   )
 }
 
-function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId: string | null }) {
+function LiveMatchEvents({ matchId, homeTeamId, isLive = false }: { matchId: string; homeTeamId: string | null; isLive?: boolean }) {
   const [events, setEvents] = useState<any[]>([])
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
@@ -2386,7 +2386,7 @@ function LiveMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTeamId:
 
   return (
     <div className="mt-2 mb-1">
-    {updatedAt && (
+    {updatedAt && isLive && (
       <p className="text-[10px] text-center text-[var(--text-muted)] mb-1">
         Actualizado: {updatedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
       </p>
