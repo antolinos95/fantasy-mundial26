@@ -62,7 +62,7 @@ export interface Match {
   home_team_id: string | null
   away_team_id: string | null
   match_date: string | null
-  status: 'scheduled' | 'finished'
+  status: 'scheduled' | 'live' | 'finished'
   match_type: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'third' | 'final' | null
   home_goals: number | null
   away_goals: number | null
