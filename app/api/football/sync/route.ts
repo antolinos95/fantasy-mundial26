@@ -91,7 +91,7 @@ function isAuthorized(req: NextRequest): boolean {
   return false
 }
 
-interface NewEvent {
+interface NewEvent {  // kept for potential future use
   squad_player_id: string
   player_name: string
   team_id: string
@@ -242,18 +242,18 @@ export async function GET(req: NextRequest) {
       const espnHomeId = homeComp.team?.id
       const espnAwayId = awayComp.team?.id
 
-      const newEvents = await syncESPNEvents(
+      const insertedCount = await syncESPNEvents(
         ourMatch.id, details, homeId, awayId, espnHomeId, espnAwayId, isFinished
       )
-      log.push(`✓ Events ${homeEs} vs ${awayEs}: ${details.length} details, ${newEvents.length} new`)
+      log.push(`✓ Events ${homeEs} vs ${awayEs}: ${details.length} details, ${insertedCount} new`)
 
-      // Solo notificar si el partido estaba live (no finished) en la DB antes de esta sync
-      if (newEvents.length > 0 && ourMatch.status !== 'finished') {
+      // Notificar eventos pendientes (notified=false) solo si el partido no estaba ya finished
+      if (ourMatch.status !== 'finished') {
         const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
         const notifCount = await sendEventNotifications(
-          ourMatch.id, ourMatch.league_id, homeId, awayId, fdHomeGoals, fdAwayGoals, newEvents, teamNames
+          ourMatch.id, ourMatch.league_id, homeId, awayId, fdHomeGoals, fdAwayGoals, teamNames
         )
-        log.push(`🔔 ${notifCount} notificaciones enviadas`)
+        if (notifCount > 0) log.push(`🔔 ${notifCount} notificaciones enviadas`)
       }
 
       if (isFinished) {
@@ -276,19 +276,19 @@ async function syncESPNEvents(
   espnHomeId: string,
   espnAwayId: string,
   isFinished: boolean,
-): Promise<NewEvent[]> {
+): Promise<number> {
   // Filtrar solo goles y tarjetas rojas
   const relevant = details.filter(d =>
     (d.scoringPlay && !d.shootout) || d.ownGoal || d.redCard
   )
-  if (relevant.length === 0) return []
+  if (relevant.length === 0) return 0
 
   const { data: squadPlayers } = await supabaseAdmin
     .from('squad_players')
     .select('id, name, team_id')
     .in('team_id', [homeTeamId, awayTeamId])
 
-  if (!squadPlayers?.length) return []
+  if (!squadPlayers?.length) return 0
   const squad = squadPlayers
 
   if (isFinished) {
@@ -308,8 +308,14 @@ async function syncESPNEvents(
     return espnTeamId === espnHomeId ? homeTeamId : awayTeamId
   }
 
-  const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: number | null }[] = []
-  const newEventsMeta: NewEvent[] = []
+  const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: number | null; notified: boolean }[] = []
+
+  // Para partidos en juego, cargamos los eventos ya existentes para deduplicar
+  const existingEvents = isFinished ? [] : (
+    (await supabaseAdmin.from('player_events')
+      .select('squad_player_id, event_type, minute, notified')
+      .eq('match_id', matchId)).data ?? []
+  )
 
   for (const d of relevant) {
     const playerName: string = d.athletesInvolved?.[0]?.displayName ?? ''
@@ -332,31 +338,24 @@ async function syncESPNEvents(
     }
 
     const sp = resolvePlayer(playerName)
-    if (!sp) {
-      // Si el gol es en propia meta, el teamId puede ser el del equipo que la metió
-      // pero el jugador pertenece al equipo contrario — reintentamos sin filtrar por equipo
-      continue
-    }
+    if (!sp) continue
 
     if (!isFinished) {
-      const { count } = await supabaseAdmin.from('player_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('match_id', matchId).eq('squad_player_id', sp.id)
-        .eq('event_type', eventType).eq('minute', minute)
-      if ((count ?? 0) > 0) continue
+      const alreadyExists = existingEvents.some(e =>
+        e.squad_player_id === sp.id && e.event_type === eventType && e.minute === minute
+      )
+      if (alreadyExists) continue
     }
 
-    toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute })
-    if (!isFinished) {
-      newEventsMeta.push({ squad_player_id: sp.id, player_name: sp.name, team_id: sp.team_id, event_type: eventType, minute })
-    }
+    // notified=true en partidos ya finalizados (reinserción limpia, no hay que notificar)
+    toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute, notified: isFinished })
   }
 
   if (toInsert.length > 0) {
     await supabaseAdmin.from('player_events').insert(toInsert)
   }
 
-  return newEventsMeta
+  return toInsert.length
 }
 
 async function sendEventNotifications(
@@ -366,21 +365,36 @@ async function sendEventNotifications(
   awayTeamId: string,
   homeGoals: number,
   awayGoals: number,
-  newEvents: NewEvent[],
   teamNames: Record<string, string>,
 ): Promise<number> {
-  const { data: ownership } = await supabaseAdmin
-    .from('drafted_teams')
-    .select('team_id, player_id, players!inner(user_id, name)')
-    .in('team_id', [homeTeamId, awayTeamId])
-    .eq('league_id', leagueId)
-
-  if (!ownership?.length) return 0
-
-  const { data: lineups } = await supabaseAdmin
-    .from('match_lineups')
-    .select('player_id, squad_player_id')
+  // Leer solo los eventos aún no notificados
+  const { data: pendingEvents } = await supabaseAdmin
+    .from('player_events')
+    .select('id, squad_player_id, event_type, minute, squad_players!inner(name, team_id)')
     .eq('match_id', matchId)
+    .eq('notified', false)
+
+  if (!pendingEvents?.length) return 0
+
+  const [{ data: ownership }, { data: lineups }] = await Promise.all([
+    supabaseAdmin
+      .from('drafted_teams')
+      .select('team_id, player_id, players!inner(user_id, name)')
+      .in('team_id', [homeTeamId, awayTeamId])
+      .eq('league_id', leagueId),
+    supabaseAdmin
+      .from('match_lineups')
+      .select('player_id, squad_player_id')
+      .eq('match_id', matchId),
+  ])
+
+  if (!ownership?.length) {
+    // Marcar como notified=true para no reintentar en partidos sin dueños
+    await supabaseAdmin.from('player_events')
+      .update({ notified: true })
+      .eq('match_id', matchId).eq('notified', false)
+    return 0
+  }
 
   const lineupSet = new Set((lineups ?? []).map(l => `${l.player_id}:${l.squad_player_id}`))
 
@@ -394,52 +408,51 @@ async function sendEventNotifications(
 
   const homeOwner = ownerByTeam[homeTeamId]
   const awayOwner = ownerByTeam[awayTeamId]
-  if (!homeOwner && !awayOwner) return 0
-
   const homeName = teamNames[homeTeamId] ?? '?'
   const awayName = teamNames[awayTeamId] ?? '?'
 
   const pushes: Promise<any>[] = []
 
-  for (const ev of newEvents) {
+  for (const ev of pendingEvents) {
+    const sp = ev.squad_players as any
+    const teamId: string = sp?.team_id ?? ''
+    const playerName: string = sp?.name ?? '?'
+
     const isGoal = ['goal', 'goal_extra_time'].includes(ev.event_type)
     const isOwn  = ev.event_type === 'own_goal'
     const isRed  = ev.event_type === 'red_card'
     const emoji  = isGoal ? '⚽' : isOwn ? '⚽🙈' : isRed ? '🟥' : '📌'
     const minuteStr = ev.minute ? ` ${ev.minute}'` : ''
 
-    const scoringOwner = ownerByTeam[ev.team_id]
+    const scoringOwner = ownerByTeam[teamId]
     const scoringOwnerHasPlayer = scoringOwner
       ? lineupSet.has(`${scoringOwner.playerId}:${ev.squad_player_id}`)
       : false
 
-    function buildTitle(recipientUserId: string) {
-      const homeLabel = homeOwner?.userId === recipientUserId ? 'Tú' : (homeOwner?.ownerName ?? null)
-      const awayLabel = awayOwner?.userId === recipientUserId ? 'Tú' : (awayOwner?.ownerName ?? null)
+    const body = `${emoji} ${playerName}${minuteStr}${scoringOwnerHasPlayer ? ' ⭐' : ''}`
+
+    const recipients = [homeOwner, awayOwner].filter(Boolean) as NonNullable<typeof homeOwner>[]
+    for (const owner of recipients) {
+      const homeLabel = homeOwner?.userId === owner.userId ? 'Tú' : (homeOwner?.ownerName ?? null)
+      const awayLabel = awayOwner?.userId === owner.userId ? 'Tú' : (awayOwner?.ownerName ?? null)
       const homeStr = homeLabel ? `${homeName} (${homeLabel})` : homeName
       const awayStr = awayLabel ? `${awayName} (${awayLabel})` : awayName
-      return `${homeStr} ${homeGoals} - ${awayStr} ${awayGoals}`
-    }
-
-    const body = `${emoji} ${ev.player_name}${minuteStr}${scoringOwnerHasPlayer ? ' ⭐' : ''}`
-
-    const recipients = [homeOwner, awayOwner].filter(Boolean) as typeof homeOwner[]
-    for (const owner of recipients) {
+      const title = `${homeStr} ${homeGoals} - ${awayStr} ${awayGoals}`
       pushes.push(
         fetch(`${APP_URL}/api/push/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-push-secret': process.env.PUSH_SECRET! },
-          body: JSON.stringify({
-            title: buildTitle(owner.userId),
-            body,
-            url: '/standings',
-            userIds: [owner.userId],
-          }),
+          body: JSON.stringify({ title, body, url: '/standings', userIds: [owner.userId] }),
         })
       )
     }
   }
 
   await Promise.all(pushes)
+
+  // Marcar todos los eventos pendientes como notificados
+  const ids = pendingEvents.map(e => e.id)
+  await supabaseAdmin.from('player_events').update({ notified: true }).in('id', ids)
+
   return pushes.length
 }
