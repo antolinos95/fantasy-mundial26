@@ -126,19 +126,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'No active match window', skipped: true })
   }
 
-  // Una sola llamada ESPN da estado + marcador + eventos de todos los partidos del día
-  const dateStr = today.replace(/-/g, '')
-  const espnRes = await fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    cache: 'no-store',
-  })
+  // ESPN usa hora local americana — partidos a las 01:00 UTC pueden aparecer bajo el día anterior.
+  // Consultamos hoy y ayer en paralelo para no perder ningún partido nocturno.
+  const dateStr      = today.replace(/-/g, '')
+  const yesterday    = new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '')
+  const [espnRes, espnYestRes] = await Promise.all([
+    fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`,   { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
+    fetch(`${ESPN_BASE}/scoreboard?dates=${yesterday}`, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }),
+  ])
 
   if (!espnRes.ok) {
     return NextResponse.json({ error: `ESPN error: ${espnRes.status}` }, { status: 502 })
   }
 
-  const espnData = await espnRes.json()
-  const espnEvents: any[] = espnData.events ?? []
+  const espnData     = await espnRes.json()
+  const espnYestData = espnYestRes.ok ? await espnYestRes.json() : { events: [] }
+  const espnEvents: any[] = [...(espnData.events ?? []), ...(espnYestData.events ?? [])]
 
   // Quedarnos con partidos en juego o terminados (excluimos pre-partido sin datos)
   const activeEvents = espnEvents.filter(ev => {

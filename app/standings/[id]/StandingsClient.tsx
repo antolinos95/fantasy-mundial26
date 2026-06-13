@@ -975,9 +975,12 @@ function MatchesTab({
   // ── Estado en vivo ──────────────────────────────────────────
   function matchLiveState(match: Match): 'upcoming' | 'live' | 'halftime' | 'finished' {
     if (match.status === 'finished') return 'finished'
+    if (match.status === 'live') return 'live'
     if (!match.match_date) return 'upcoming'
     const elapsed = (Date.now() - new Date(match.match_date).getTime()) / 60000
     if (elapsed < 0) return 'upcoming'
+    // Si han pasado más de 120 min y la BD no lo marca como live/finished, no mostrarlo como en juego
+    if (elapsed > 120) return 'upcoming'
     if (elapsed >= 45 && elapsed < 60) return 'halftime'
     return 'live'
   }
