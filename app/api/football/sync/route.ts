@@ -111,20 +111,22 @@ export async function GET(req: NextRequest) {
   lastSyncMs = now
 
 
-  const today = new Date().toISOString().slice(0, 10)
+  // Pre-check: solo consultamos ESPN si hay un partido live ahora o que empiece en ≤5 min
+  // Usamos la ventana [now - 130min, now + 5min] para cubrir partidos en juego (hasta 120min) e inminentes
+  const windowStart = new Date(now - 130 * 60 * 1000).toISOString()
+  const windowEnd   = new Date(now +   5 * 60 * 1000).toISOString()
 
-  // Pre-check: ¿hay partidos no finalizados hoy?
-  // Si los hay (aunque sean de hace horas), hay que consultar ESPN para actualizarlos.
-  const { data: candidateMatches } = await supabaseAdmin
+  const { data: activeMatches } = await supabaseAdmin
     .from('matches')
-    .select('id, status')
+    .select('id, status, match_date')
     .neq('status', 'finished')
-    .gte('match_date', `${today}T00:00:00`)
-    .lte('match_date', `${today}T23:59:59`)
+    .or(`status.eq.live,and(match_date.gte.${windowStart},match_date.lte.${windowEnd})`)
 
-  if (!candidateMatches?.length) {
+  if (!activeMatches?.length) {
     return NextResponse.json({ message: 'No active match window', skipped: true })
   }
+
+  const today = new Date().toISOString().slice(0, 10)
 
   // ESPN indexa los partidos en Eastern Time (EDT = UTC-4 en verano).
   // Un partido a las 01:00 UTC = 21:00 ET del día anterior → hay que pedir ese día en ESPN.
