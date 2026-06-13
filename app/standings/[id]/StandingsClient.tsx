@@ -781,7 +781,7 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
       </div>
       {match.match_date && (
         <p className="text-xs text-center text-[var(--text-secondary)] mb-3">
-          {new Date(match.match_date).toLocaleDateString('es', { dateStyle: 'medium' })}
+          {new Date(match.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)}
         </p>
       )}
 
