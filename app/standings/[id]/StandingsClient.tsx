@@ -1022,8 +1022,9 @@ function MatchesTab({
     return new Date(match.match_date).getTime() - REVEAL_BEFORE_MS <= Date.now()
   }
 
-  const [visibleMy, setVisibleMy]       = useState(5)
-  const [visibleOther, setVisibleOther] = useState(5)
+  const [visibleMy, setVisibleMy]             = useState(5)
+  const [visibleOther, setVisibleOther]       = useState(5)
+  const [visibleOtherDone, setVisibleOtherDone] = useState(5)
   const [myView, setMyView]             = useState<'pending' | 'finished'>('pending')
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -1380,9 +1381,17 @@ function MatchesTab({
 
           {/* Próximos / en juego */}
           {pendingOther.length > 0 && (
-            <div className="space-y-2">
-              {pendingOther.map(m => <OtherMatchCard key={m.id} m={m} />)}
-            </div>
+            <>
+              <div className="space-y-2">
+                {pendingOther.slice(0, visibleOther).map(m => <OtherMatchCard key={m.id} m={m} />)}
+              </div>
+              {pendingOther.length > visibleOther && (
+                <button onClick={() => setVisibleOther(v => v + 5)}
+                  className="w-full py-2 text-sm text-[var(--text-secondary)] hover:text-white border border-[var(--border)] rounded-xl transition-colors">
+                  Ver más próximos ({pendingOther.length - visibleOther} restantes)
+                </button>
+              )}
+            </>
           )}
 
           {/* Finalizados */}
@@ -1390,8 +1399,14 @@ function MatchesTab({
             <>
               <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mt-2">Finalizados</p>
               <div className="space-y-2">
-                {finishedOther.map(m => <OtherMatchCard key={m.id} m={m} />)}
+                {finishedOther.slice(0, visibleOtherDone).map(m => <OtherMatchCard key={m.id} m={m} />)}
               </div>
+              {finishedOther.length > visibleOtherDone && (
+                <button onClick={() => setVisibleOtherDone(v => v + 5)}
+                  className="w-full py-2 text-sm text-[var(--text-secondary)] hover:text-white border border-[var(--border)] rounded-xl transition-colors">
+                  Ver más finalizados ({finishedOther.length - visibleOtherDone} restantes)
+                </button>
+              )}
             </>
           )}
         </section>

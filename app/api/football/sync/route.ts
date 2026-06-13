@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from('teams').select('id, name'),
     supabaseAdmin
       .from('matches')
-      .select('id, home_team_id, away_team_id, home_goals, away_goals, status, match_date')
+      .select('id, league_id, home_team_id, away_team_id, home_goals, away_goals, status, match_date')
       .gte('match_date', `${today}T00:00:00`)
       .lte('match_date', `${today}T23:59:59`),
   ])
@@ -251,7 +251,7 @@ export async function GET(req: NextRequest) {
       if (newEvents.length > 0 && ourMatch.status !== 'finished') {
         const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
         const notifCount = await sendEventNotifications(
-          ourMatch.id, homeId, awayId, fdHomeGoals, fdAwayGoals, newEvents, teamNames
+          ourMatch.id, ourMatch.league_id, homeId, awayId, fdHomeGoals, fdAwayGoals, newEvents, teamNames
         )
         log.push(`🔔 ${notifCount} notificaciones enviadas`)
       }
@@ -361,6 +361,7 @@ async function syncESPNEvents(
 
 async function sendEventNotifications(
   matchId: string,
+  leagueId: string,
   homeTeamId: string,
   awayTeamId: string,
   homeGoals: number,
@@ -372,6 +373,7 @@ async function sendEventNotifications(
     .from('drafted_teams')
     .select('team_id, player_id, players!inner(user_id, name)')
     .in('team_id', [homeTeamId, awayTeamId])
+    .eq('league_id', leagueId)
 
   if (!ownership?.length) return 0
 
