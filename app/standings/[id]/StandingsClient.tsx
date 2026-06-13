@@ -1032,11 +1032,13 @@ function MatchesTab({
   }, [])
 
   const allMyMatches    = myId ? matches.filter(m => myTeamIds.includes(m.home_team_id ?? '') || myTeamIds.includes(m.away_team_id ?? '')) : []
-  const allOtherMatches = matches.filter(m => !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? ''))
-  const pendingMy   = allMyMatches.filter(m => m.status !== 'finished')
-  const finishedMy  = allMyMatches.filter(m => m.status === 'finished')
-  const myMatches    = pendingMy.slice(0, visibleMy)
-  const otherMatches = allOtherMatches.slice(0, visibleOther)
+  const allOtherMatches    = matches.filter(m => !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? ''))
+  const pendingMy          = allMyMatches.filter(m => m.status !== 'finished')
+  const finishedMy         = allMyMatches.filter(m => m.status === 'finished')
+  const pendingOther       = allOtherMatches.filter(m => m.status !== 'finished').sort((a, b) => (a.match_date ?? '').localeCompare(b.match_date ?? ''))
+  const finishedOther      = allOtherMatches.filter(m => m.status === 'finished').sort((a, b) => (b.match_date ?? '').localeCompare(a.match_date ?? ''))
+  const myMatches          = pendingMy.slice(0, visibleMy)
+  const otherMatches       = allOtherMatches.slice(0, visibleOther)
 
   // Recordatorios: partidos en ventana 24h–2h sin porra o sin alineación completa
   const reminders = pendingMy.filter(m => {
@@ -1050,6 +1052,63 @@ function MatchesTab({
     const noLineup = myTeamsHere.some(tid => (lineups[`${m.id}-${tid}`]?.length ?? 0) < 3)
     return noPorra || noLineup
   })
+
+  function OtherMatchCard({ m }: { m: Match }) {
+    const homeOwner = ownerName(m.home_team_id ?? '')
+    const awayOwner = ownerName(m.away_team_id ?? '')
+    const state = matchLiveState(m)
+    return (
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">{m.home_team?.flag_emoji}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{m.home_team?.name}</p>
+            {homeOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{homeOwner}</p>}
+          </div>
+          <div className="flex flex-col items-center shrink-0">
+            {state === 'finished' ? (
+              <span className="font-black tabular-nums text-sm">{m.home_goals} - {m.away_goals}</span>
+            ) : state === 'live' ? (
+              <>
+                <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                <span className="text-[9px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
+              </>
+            ) : state === 'halftime' ? (
+              <>
+                <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
+              </>
+            ) : (
+              <div className="flex flex-col items-center">
+                <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                {m.match_date && (
+                  <span className="text-[9px] text-[var(--text-secondary)]">
+                    {new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0 text-right">
+            <p className="text-sm font-medium truncate">{m.away_team?.name}</p>
+            {awayOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{awayOwner}</p>}
+          </div>
+          <span className="text-lg">{m.away_team?.flag_emoji}</span>
+        </div>
+        {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
+          <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
+        )}
+        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
+          m.home_team_id && m.away_team_id &&
+          !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
+          <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+        )}
+        {isRevealed(m) && (
+          <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -1314,76 +1373,26 @@ function MatchesTab({
         )}
       </section>
 
-      {/* Todos los partidos */}
+      {/* Otros partidos: próximos primero, finalizados aparte */}
       {allOtherMatches.length > 0 && (
-        <section>
-          <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">Otros partidos</h2>
-          <div className="space-y-2">
-            {otherMatches.map(m => {
-              const homeOwner = ownerName(m.home_team_id ?? '')
-              const awayOwner = ownerName(m.away_team_id ?? '')
-              return (
-                <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">{m.home_team?.flag_emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{m.home_team?.name}</p>
-                      {homeOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{homeOwner}</p>}
-                    </div>
-                    <div className="flex flex-col items-center shrink-0">
-                      {(() => {
-                        const state = matchLiveState(m)
-                        if (state === 'finished') return <span className="font-black tabular-nums text-sm">{m.home_goals} - {m.away_goals}</span>
-                        if (state === 'live') return (
-                          <>
-                            <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                            <span className="text-[9px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
-                          </>
-                        )
-                        if (state === 'halftime') return (
-                          <>
-                            <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                            <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
-                          </>
-                        )
-                        return (
-                          <div className="flex flex-col items-center">
-                            <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
-                            {m.match_date && (
-                              <span className="text-[9px] text-[var(--text-secondary)]">
-                                {new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
-                              </span>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                    <div className="flex-1 min-w-0 text-right">
-                      <p className="text-sm font-medium truncate">{m.away_team?.name}</p>
-                      {awayOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{awayOwner}</p>}
-                    </div>
-                    <span className="text-lg">{m.away_team?.flag_emoji}</span>
-                  </div>
-                  {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime' || m.status === 'finished') && (
-                    <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} />
-                  )}
-                  {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
-                    m.home_team_id && m.away_team_id &&
-                    !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
-                    <WildcardButton match={m} leagueId={leagueId} myId={myId} />
-                  )}
-                  {isRevealed(m) && (
-                    <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          {allOtherMatches.length > visibleOther && (
-            <button onClick={() => setVisibleOther(v => v + 5)}
-              className="mt-3 w-full py-2 text-sm text-[var(--text-secondary)] hover:text-white border border-[var(--border)] rounded-xl transition-colors">
-              Ver más ({allOtherMatches.length - visibleOther} restantes)
-            </button>
+        <section className="space-y-4">
+          <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider">Otros partidos</h2>
+
+          {/* Próximos / en juego */}
+          {pendingOther.length > 0 && (
+            <div className="space-y-2">
+              {pendingOther.map(m => <OtherMatchCard key={m.id} m={m} />)}
+            </div>
+          )}
+
+          {/* Finalizados */}
+          {finishedOther.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mt-2">Finalizados</p>
+              <div className="space-y-2">
+                {finishedOther.map(m => <OtherMatchCard key={m.id} m={m} />)}
+              </div>
+            </>
           )}
         </section>
       )}

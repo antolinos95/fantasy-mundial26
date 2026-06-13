@@ -247,7 +247,8 @@ export async function GET(req: NextRequest) {
       )
       log.push(`✓ Events ${homeEs} vs ${awayEs}: ${details.length} details, ${newEvents.length} new`)
 
-      if (newEvents.length > 0) {
+      // Solo notificar si el partido estaba live (no finished) en la DB antes de esta sync
+      if (newEvents.length > 0 && ourMatch.status !== 'finished') {
         const teamNames: Record<string, string> = { [homeId]: homeEs, [awayId]: awayEs }
         const notifCount = await sendEventNotifications(
           ourMatch.id, homeId, awayId, fdHomeGoals, fdAwayGoals, newEvents, teamNames
