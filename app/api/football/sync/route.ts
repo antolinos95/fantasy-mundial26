@@ -299,8 +299,17 @@ async function syncESPNEvents(
     await supabaseAdmin.from('player_events').delete().eq('match_id', matchId)
   }
 
-  function resolvePlayer(name: string) {
+  function resolvePlayer(name: string, teamId: string) {
     const norm = normalize(name)
+    const teamSquad = squad.filter(p => p.team_id === teamId)
+    // Intentamos primero en el equipo correcto para evitar falsos positivos por apellido compartido
+    const inTeam = teamSquad.find(p => {
+      const n = normalize(p.name)
+      return n === norm || n.includes(norm) || norm.includes(n) ||
+        n.split(' ').at(-1) === norm.split(' ').at(-1)
+    })
+    if (inTeam) return inTeam
+    // Fallback: buscar en ambos equipos (ej: autogol donde el jugador es del equipo contrario)
     return squad.find(p => {
       const n = normalize(p.name)
       return n === norm || n.includes(norm) || norm.includes(n) ||
@@ -341,7 +350,7 @@ async function syncESPNEvents(
       eventType = 'goal'
     }
 
-    const sp = resolvePlayer(playerName)
+    const sp = resolvePlayer(playerName, teamId)
     if (!sp) continue
 
     if (!isFinished) {
