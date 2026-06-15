@@ -335,7 +335,12 @@ async function syncESPNEvents(
     if (!playerName) continue
 
     const minute = parseMinute(d.clock?.displayValue ?? '') || null
-    const teamId = espnTeamToOurId(d.team?.id)
+    // Para autogoles, ESPN marca el team del equipo que recibe el gol;
+    // el jugador pertenece al equipo contrario
+    const espnEventTeamId = d.team?.id
+    const teamId = d.ownGoal
+      ? (espnEventTeamId === espnHomeId ? awayTeamId : homeTeamId)
+      : espnTeamToOurId(espnEventTeamId)
 
     let eventType: string
     if (d.ownGoal) {
