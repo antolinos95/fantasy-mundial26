@@ -160,17 +160,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'Matches scheduled but not started yet', skipped: true })
   }
 
-  // Ventana amplia (±2 días UTC) para cubrir diferencias de huso horario entre ESPN (ET) y nuestra BD (UTC)
-  const twoDaysAgo = new Date(now - 48 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const tomorrow   = new Date(now + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  // Convertir los días ET que pedimos a ESPN al rango UTC equivalente exacto (ET = UTC-4).
+  // etYesterday 00:00 ET = etYesterday 04:00 UTC → inicio de la ventana
+  // etToday     23:59 ET = etToday+1  03:59 UTC → fin de la ventana
+  const etYesterdayISO = `${etYesterday.slice(0,4)}-${etYesterday.slice(4,6)}-${etYesterday.slice(6,8)}`
+  const etTodayISO     = `${etToday.slice(0,4)}-${etToday.slice(4,6)}-${etToday.slice(6,8)}`
+  const windowStart = new Date(new Date(`${etYesterdayISO}T00:00:00Z`).getTime() + ET_OFFSET_MS).toISOString()
+  const windowEnd   = new Date(new Date(`${etTodayISO}T23:59:59Z`).getTime()     + ET_OFFSET_MS).toISOString()
+
   const [{ data: teams }, { data: ourMatches }] = await Promise.all([
     supabaseAdmin.from('teams').select('id, name'),
     supabaseAdmin
       .from('matches')
       .select('id, league_id, home_team_id, away_team_id, home_goals, away_goals, status, match_date')
       .neq('status', 'finished')   // nunca reprocessar partidos ya finalizados
-      .gte('match_date', `${twoDaysAgo}T00:00:00Z`)
-      .lte('match_date', `${tomorrow}T23:59:59Z`),
+      .gte('match_date', windowStart)
+      .lte('match_date', windowEnd),
   ])
 
   const teamByEs: Record<string, string> = {}
