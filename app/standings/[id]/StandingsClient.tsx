@@ -78,6 +78,20 @@ export default function StandingsClient({
     return () => { supabase.removeChannel(ch) }
   }, [league.id])
 
+  // Fallback polling every 30s when a match is live (in case realtime doesn't fire)
+  const hasLiveMatch = liveMatches.some(m => m.status === 'live')
+  useEffect(() => {
+    if (!hasLiveMatch) return
+    async function fetchMatches() {
+      const { data } = await supabase.from('matches')
+        .select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)')
+        .or(`league_id.is.null,league_id.eq.${league.id}`).order('match_date')
+      if (data) { setLiveMatches(data); setMatchesUpdatedAt(new Date()) }
+    }
+    const t = setInterval(fetchMatches, 30000)
+    return () => clearInterval(t)
+  }, [hasLiveMatch, league.id])
+
   const [unreadAvisos, setUnreadAvisos] = useState(0)
 
   useEffect(() => {
