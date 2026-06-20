@@ -62,20 +62,27 @@ export default function StandingsClient({
   }, [league.admin_user_id, players])
 
   useEffect(() => {
-    const ch = supabase
-      .channel(`standings-${league.id}`)
+    async function refetchMatches() {
+      const { data } = await supabase.from('matches')
+        .select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)')
+        .or(`league_id.is.null,league_id.eq.${league.id}`).order('match_date')
+      if (data) { setLiveMatches(data); setMatchesUpdatedAt(new Date()) }
+    }
+
+    const scoresCh = supabase
+      .channel(`standings-scores-${league.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'scores', filter: `league_id=eq.${league.id}` }, async () => {
         const { data } = await supabase.from('scores').select('*, player:players(*)').eq('league_id', league.id).order('points', { ascending: false })
         if (data) setLiveScores(data.filter(s => playerIds.has(s.player_id)))
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, async () => {
-        const { data } = await supabase.from('matches')
-          .select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)')
-          .or(`league_id.is.null,league_id.eq.${league.id}`).order('match_date')
-        if (data) { setLiveMatches(data); setMatchesUpdatedAt(new Date()) }
-      })
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+
+    const matchesCh = supabase
+      .channel(`standings-matches-${league.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchMatches)
+      .subscribe()
+
+    return () => { supabase.removeChannel(scoresCh); supabase.removeChannel(matchesCh) }
   }, [league.id])
 
   // Fallback polling every 30s cuando hay partido en juego (status live en BD O tiempo transcurrido < 130 min)
