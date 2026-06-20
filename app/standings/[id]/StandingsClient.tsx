@@ -1108,7 +1108,7 @@ function MatchesTab({
             ) : state === 'live' ? (
               <>
                 <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                <span className="text-[9px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
+                <span className="text-[9px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} /></span>
               </>
             ) : state === 'halftime' ? (
               <>
@@ -1226,7 +1226,7 @@ function MatchesTab({
                           if (state === 'live') return (
                             <>
                               <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                              <span className="text-[10px] font-bold text-red-400 animate-pulse">{matchMinute(m)}&apos;</span>
+                              <span className="text-[10px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} /></span>
                             </>
                           )
                           if (state === 'halftime') return (
@@ -2411,6 +2411,20 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
       </div>
     </div>
   )
+}
+
+function LiveClock({ matchDate }: { matchDate: string }) {
+  const calc = () => {
+    const elapsed = (Date.now() - new Date(matchDate).getTime()) / 60000
+    if (elapsed >= 60) return Math.min(Math.floor(elapsed - 15), 90)
+    return Math.min(Math.floor(elapsed), 45)
+  }
+  const [minute, setMinute] = useState(calc)
+  useEffect(() => {
+    const t = setInterval(() => setMinute(calc()), 60000)
+    return () => clearInterval(t)
+  }, [matchDate])
+  return <>{minute}&apos;</>
 }
 
 function LiveMatchEvents({ matchId, homeTeamId, isLive = false }: { matchId: string; homeTeamId: string | null; isLive?: boolean }) {
