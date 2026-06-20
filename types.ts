@@ -66,6 +66,7 @@ export interface Match {
   match_type: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'third' | 'final' | null
   home_goals: number | null
   away_goals: number | null
+  match_clock: string | null
   slot_home: string | null
   slot_away: string | null
   home_team?: Team

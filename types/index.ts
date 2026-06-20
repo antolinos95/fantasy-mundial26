@@ -1,5 +1,5 @@
 export type LeagueStatus = 'waiting' | 'drafting' | 'active' | 'finished'
-export type MatchStatus  = 'scheduled' | 'finished'
+export type MatchStatus  = 'scheduled' | 'live' | 'finished'
 
 export interface League {
   id: string
@@ -64,6 +64,7 @@ export interface Match {
   home_goals: number | null
   away_goals: number | null
   status: MatchStatus
+  match_clock: string | null
   created_at: string
   home_team?: Team
   away_team?: Team

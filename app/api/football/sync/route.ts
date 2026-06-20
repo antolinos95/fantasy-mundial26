@@ -229,13 +229,13 @@ export async function GET(req: NextRequest) {
     if (isLive     && ourMatch.status !== 'live')     updates.status = 'live'
     if (isFinished && ourMatch.status !== 'finished') updates.status = 'finished'
 
-    // Corrección de hora: siempre que el partido esté en juego, recalculamos el kick-off real
-    // usando el reloj de ESPN (displayClock), que funciona en 1ª y 2ª parte.
+    // Guardar el reloj real de ESPN (incluye tiempo añadido: "45+2", "90+3") y corregir match_date
     if (isLive) {
       const displayClock: string = comp.status?.displayClock ?? ''
+      // Guardar el clock raw para mostrarlo en la UI
+      if (displayClock) updates.match_clock = displayClock
       const elapsedMin = parseMinute(displayClock)
       if (elapsedMin > 0) {
-        // En 2ª parte restamos 15 min de descanso al total de tiempo transcurrido
         const realElapsed = elapsedMin > 45 ? elapsedMin + 15 : elapsedMin
         const calculatedKickoff = new Date(now - realElapsed * 60 * 1000)
         const storedKickoff = new Date(ourMatch.match_date)
@@ -246,6 +246,7 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+    if (isFinished) updates.match_clock = null
 
     if (Object.keys(updates).length > 0) {
       const { error: updateErr } = await supabaseAdmin.from('matches').update(updates).eq('id', ourMatch.id)
