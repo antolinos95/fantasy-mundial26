@@ -167,7 +167,7 @@ export default function StandingsClient({
           league={league} players={players}
         />
       )}
-      {tab === 'mundial' && <MundialTab matches={liveMatches} />}
+      {tab === 'mundial' && <MundialTab matches={liveMatches} draftedTeams={draftedTeams} players={players} />}
       {tab === 'avisos' && (
         <AvisosTab leagueId={league.id} onRead={() => setUnreadAvisos(0)} />
       )}
@@ -1439,9 +1439,18 @@ interface GroupRow {
   gf: number; ga: number; pts: number
 }
 
-function MundialTab({ matches }: { matches: Match[] }) {
+function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draftedTeams: DraftedTeam[]; players: Player[] }) {
   const [allTeams, setAllTeams] = useState<import('../../../types').Team[]>([])
   const [view, setView] = useState<'groups' | 'knockout'>('groups')
+
+  const ownerMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const dt of draftedTeams) {
+      const name = players.find(p => p.id === dt.player_id)?.name
+      if (name) m[dt.team_id] = name
+    }
+    return m
+  }, [draftedTeams, players])
 
   useEffect(() => {
     supabase.from('teams').select('*').order('group_name').order('name')
@@ -1581,11 +1590,18 @@ function MundialTab({ matches }: { matches: Match[] }) {
               {rows.map((row, i) => (
                 <tr key={row.team.id}
                   className={`border-b border-[var(--border)] last:border-0 ${i < 2 ? 'bg-[var(--accent)]/5' : ''}`}>
-                  <td className="px-3 py-2 flex items-center gap-2">
-                    {i < 2 && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" />}
-                    {i >= 2 && <span className="w-1.5 h-1.5 shrink-0" />}
-                    <span className="text-base leading-none">{row.team.flag_emoji}</span>
-                    <span className="font-medium truncate">{row.team.name}</span>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {i < 2 && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" />}
+                      {i >= 2 && <span className="w-1.5 h-1.5 shrink-0" />}
+                      <span className="text-base leading-none">{row.team.flag_emoji}</span>
+                      <div className="min-w-0">
+                        <span className="font-medium truncate block">{row.team.name}</span>
+                        {ownerMap[row.team.id] && (
+                          <span className="text-[10px] text-[var(--text-secondary)] truncate block">{ownerMap[row.team.id]}</span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-2 py-2 text-center text-[var(--text-secondary)]">{row.p}</td>
                   <td className="px-2 py-2 text-center text-[var(--text-secondary)]">{row.w}</td>
@@ -1619,6 +1635,7 @@ function MundialTab({ matches }: { matches: Match[] }) {
           <KnockoutBracket
             knockoutMatches={knockoutMatches}
             slotResolution={slotResolution}
+            ownerMap={ownerMap}
           />
         </>
       )}
@@ -1632,9 +1649,10 @@ function teamShort(t: { name: string; fifa_code?: string | null }) {
   return t.fifa_code ?? t.name.slice(0, 3).toUpperCase()
 }
 
-function KnockoutBracket({ knockoutMatches, slotResolution }: {
+function KnockoutBracket({ knockoutMatches, slotResolution, ownerMap }: {
   knockoutMatches: Match[]
-  slotResolution: Record<string, { name: string; flag_emoji: string; fifa_code?: string | null } | null>
+  slotResolution: Record<string, { name: string; flag_emoji: string; fifa_code?: string | null; id?: string } | null>
+  ownerMap: Record<string, string>
 }) {
   const columns: { key: string; label: string }[] = [
     { key: 'r32',   label: 'Ronda de 32' },
@@ -1645,12 +1663,16 @@ function KnockoutBracket({ knockoutMatches, slotResolution }: {
   ]
   const thirdMatch = knockoutMatches.find(m => m.match_type === 'third')
 
-  function side(team: { name: string; flag_emoji: string; fifa_code?: string | null } | null | undefined, slot: string | null, projected: boolean) {
+  function side(team: { name: string; flag_emoji: string; fifa_code?: string | null; id?: string } | null | undefined, slot: string | null, projected: boolean) {
     if (team) {
+      const owner = team.id ? ownerMap[team.id] : undefined
       return (
         <span className="flex items-center gap-1 min-w-0">
-          <span className="text-sm leading-none">{team.flag_emoji}</span>
-          <span className="text-xs font-semibold truncate">{teamShort(team)}</span>
+          <span className="text-sm leading-none shrink-0">{team.flag_emoji}</span>
+          <span className="flex flex-col min-w-0">
+            <span className="text-xs font-semibold truncate leading-tight">{teamShort(team)}</span>
+            {owner && <span className="text-[9px] text-[var(--text-secondary)] truncate leading-tight">{owner}</span>}
+          </span>
         </span>
       )
     }
