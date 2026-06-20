@@ -229,17 +229,20 @@ export async function GET(req: NextRequest) {
     if (isLive     && ourMatch.status !== 'live')     updates.status = 'live'
     if (isFinished && ourMatch.status !== 'finished') updates.status = 'finished'
 
-    // Corrección de hora si el partido arrancó tarde
-    if (isLive && ourMatch.status === 'scheduled') {
+    // Corrección de hora: siempre que el partido esté en juego, recalculamos el kick-off real
+    // usando el reloj de ESPN (displayClock), que funciona en 1ª y 2ª parte.
+    if (isLive) {
       const displayClock: string = comp.status?.displayClock ?? ''
       const elapsedMin = parseMinute(displayClock)
-      if (elapsedMin > 0 && elapsedMin <= 45) {
-        const calculatedKickoff = new Date(now - elapsedMin * 60 * 1000)
-        const scheduledKickoff  = new Date(ourMatch.match_date)
-        const diffMin = Math.abs(calculatedKickoff.getTime() - scheduledKickoff.getTime()) / 60000
-        if (diffMin > 5) {
+      if (elapsedMin > 0) {
+        // En 2ª parte restamos 15 min de descanso al total de tiempo transcurrido
+        const realElapsed = elapsedMin > 45 ? elapsedMin + 15 : elapsedMin
+        const calculatedKickoff = new Date(now - realElapsed * 60 * 1000)
+        const storedKickoff = new Date(ourMatch.match_date)
+        const diffMin = Math.abs(calculatedKickoff.getTime() - storedKickoff.getTime()) / 60000
+        if (diffMin > 2) {
           updates.match_date = calculatedKickoff.toISOString()
-          log.push(`⏰ Kick-off retrasado ${Math.round(diffMin)} min: ${homeEs} vs ${awayEs}`)
+          log.push(`⏰ Kick-off corregido ${Math.round(diffMin)} min: ${homeEs} vs ${awayEs}`)
         }
       }
     }
@@ -469,7 +472,7 @@ async function sendEventNotifications(
         fetch(`${APP_URL}/api/push/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-push-secret': process.env.PUSH_SECRET! },
-          body: JSON.stringify({ title, body, url: '/standings', userIds: [owner.userId] }),
+          body: JSON.stringify({ title, body, url: `/standings/${leagueId}`, userIds: [owner.userId] }),
         })
       )
     }
