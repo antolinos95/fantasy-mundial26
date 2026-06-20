@@ -248,8 +248,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (Object.keys(updates).length > 0) {
-      await supabaseAdmin.from('matches').update(updates).eq('id', ourMatch.id)
-      log.push(`✓ Updated ${homeEs} vs ${awayEs}: ${JSON.stringify(updates)}`)
+      const { error: updateErr } = await supabaseAdmin.from('matches').update(updates).eq('id', ourMatch.id)
+      if (updateErr) {
+        log.push(`✗ Update FAILED ${homeEs} vs ${awayEs}: ${updateErr.message}`)
+      } else {
+        log.push(`✓ Updated ${homeEs} vs ${awayEs}: ${JSON.stringify(updates)}`)
+      }
     }
 
     if (isLive || isFinished) {
