@@ -81,6 +81,8 @@ export default function StandingsClient({
     const matchesCh = supabase
       .channel(`standings-matches-${league.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchMatches)
+      // Cuando llega un gol (player_events INSERT), refrescar también el marcador y la hora del partido
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'player_events' }, refetchMatches)
       .subscribe()
 
     return () => { supabase.removeChannel(scoresCh); supabase.removeChannel(matchesCh) }
@@ -102,7 +104,6 @@ export default function StandingsClient({
         .or(`league_id.is.null,league_id.eq.${league.id}`).order('match_date')
       if (data) { setLiveMatches(data); setMatchesUpdatedAt(new Date()) }
     }
-    fetchMatches() // fetch inmediato al detectar partido en juego
     const t = setInterval(fetchMatches, 30000)
     return () => clearInterval(t)
   }, [hasLiveMatch, league.id])
