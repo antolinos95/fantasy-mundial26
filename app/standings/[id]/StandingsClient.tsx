@@ -49,6 +49,7 @@ export default function StandingsClient({
   const [liveScores, setLiveScores] = useState<Score[]>(scores.filter(s => playerIds.has(s.player_id)))
   const [liveMatches, setLiveMatches] = useState<Match[]>(matches)
   const [matchesUpdatedAt, setMatchesUpdatedAt] = useState<Date | null>(null)
+  const [, setTick] = useState(0)
   const [showRules, setShowRules]   = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -104,6 +105,12 @@ export default function StandingsClient({
     const t = setInterval(fetchMatches, 30000)
     return () => clearInterval(t)
   }, [hasLiveMatch, league.id])
+
+  // Tick cada 30s para re-evaluar hasLiveMatch y arrancar el polling cuando empieza un partido
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   const [unreadAvisos, setUnreadAvisos] = useState(0)
 
