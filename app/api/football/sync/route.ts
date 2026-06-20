@@ -87,7 +87,9 @@ function parseMinute(displayValue: string): number {
 
 function isAuthorized(req: NextRequest): boolean {
   if (req.headers.get('x-push-secret') === process.env.PUSH_SECRET) return true
-  if (req.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`) return true
+  const bearer = req.headers.get('authorization')
+  if (process.env.CRON_SECRET && bearer === `Bearer ${process.env.CRON_SECRET}`) return true
+  if (process.env.VERCEL_CRON_SECRET && bearer === `Bearer ${process.env.VERCEL_CRON_SECRET}`) return true
   return false
 }
 
