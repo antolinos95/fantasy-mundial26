@@ -81,6 +81,8 @@ export default function StandingsClient({
     const matchesCh = supabase
       .channel(`standings-matches-${league.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchMatches)
+      // Cuando llega un gol (player_events INSERT), refrescar también el marcador y la hora del partido
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'player_events' }, refetchMatches)
       .subscribe()
 
     return () => { supabase.removeChannel(scoresCh); supabase.removeChannel(matchesCh) }
