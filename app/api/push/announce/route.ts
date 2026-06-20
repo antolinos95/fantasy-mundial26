@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/push/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-push-secret': process.env.PUSH_SECRET! },
-    body: JSON.stringify({ title, body, url: url ?? '/standings', userIds }),
+    body: JSON.stringify({ title, body, url: url ?? `/standings/${leagueId}`, userIds }),
   })
 
   const data = await res.json()

@@ -2807,7 +2807,7 @@ function AnnouncementSection({ players, league }: { players: Player[]; league: L
     await fetch('/api/push/announce', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
-      body: JSON.stringify({ title: title.trim(), body: body.trim(), url: '/standings', userIds, leagueId: league.id }),
+      body: JSON.stringify({ title: title.trim(), body: body.trim(), url: `/standings/${league.id}`, userIds, leagueId: league.id }),
     })
     setSending(false)
     setSent(true)
