@@ -78,8 +78,14 @@ export default function StandingsClient({
     return () => { supabase.removeChannel(ch) }
   }, [league.id])
 
-  // Fallback polling every 30s when a match is live (in case realtime doesn't fire)
-  const hasLiveMatch = liveMatches.some(m => m.status === 'live')
+  // Fallback polling every 30s cuando hay partido en juego (status live en BD O tiempo transcurrido < 130 min)
+  const hasLiveMatch = liveMatches.some(m => {
+    if (m.status === 'finished') return false
+    if (m.status === 'live') return true
+    if (!m.match_date) return false
+    const elapsed = (Date.now() - new Date(m.match_date).getTime()) / 60000
+    return elapsed >= 0 && elapsed <= 130
+  })
   useEffect(() => {
     if (!hasLiveMatch) return
     async function fetchMatches() {
