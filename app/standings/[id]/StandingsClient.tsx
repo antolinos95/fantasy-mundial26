@@ -1071,7 +1071,7 @@ function MatchesTab({
   const allMyMatches    = myId ? matches.filter(m => myTeamIds.includes(m.home_team_id ?? '') || myTeamIds.includes(m.away_team_id ?? '')) : []
   const allOtherMatches    = matches.filter(m => !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? ''))
   const pendingMy          = allMyMatches.filter(m => m.status !== 'finished')
-  const finishedMy         = allMyMatches.filter(m => m.status === 'finished')
+  const finishedMy         = allMyMatches.filter(m => m.status === 'finished').sort((a, b) => (b.match_date ?? '').localeCompare(a.match_date ?? ''))
   const pendingOther       = allOtherMatches.filter(m => m.status !== 'finished').sort((a, b) => (a.match_date ?? '').localeCompare(b.match_date ?? ''))
   const finishedOther      = allOtherMatches.filter(m => m.status === 'finished').sort((a, b) => (b.match_date ?? '').localeCompare(a.match_date ?? ''))
   const myMatches          = pendingMy.slice(0, visibleMy)
