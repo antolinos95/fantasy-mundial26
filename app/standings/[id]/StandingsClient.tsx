@@ -1535,9 +1535,18 @@ function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draf
       if (rows[1]) res[`2${g}`] = rows[1].team
     }
 
-    // Mejores 8 terceros (ranking global)
+    // Grupos elegibles para ser mejores terceros (solo los que aparecen en algún slot del bracket)
+    const eligibleGroups = new Set<string>()
+    for (const m of knockoutMatches) {
+      for (const slot of [m.slot_home, m.slot_away]) {
+        const mm = slot?.match(/3º\(([A-Z/]+)\)/)
+        if (mm) mm[1].split('/').forEach(g => eligibleGroups.add(g))
+      }
+    }
+
+    // Mejores 8 terceros (ranking global), solo de grupos elegibles
     const thirds = groups
-      .map(([g, rows]) => rows[2] ? { group: g, row: rows[2] } : null)
+      .map(([g, rows]) => rows[2] && (eligibleGroups.size === 0 || eligibleGroups.has(g)) ? { group: g, row: rows[2] } : null)
       .filter((x): x is { group: string; row: GroupRow } => !!x)
       .sort((a, b) =>
         b.row.pts - a.row.pts ||
