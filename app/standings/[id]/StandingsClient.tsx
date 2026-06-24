@@ -1510,7 +1510,7 @@ function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draf
       g[name].push(row)
     }
     for (const name of Object.keys(g)) {
-      g[name].sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf)
+      g[name].sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf || b.w - a.w)
     }
     return Object.entries(g).sort(([a], [b]) => a.localeCompare(b))
   }, [standings])
@@ -1542,7 +1542,8 @@ function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draf
       .sort((a, b) =>
         b.row.pts - a.row.pts ||
         (b.row.gf - b.row.ga) - (a.row.gf - a.row.ga) ||
-        b.row.gf - a.row.gf
+        b.row.gf - a.row.gf ||
+        b.row.w - a.row.w
       )
     const qualifiedThirds = thirds.slice(0, 8)
 
@@ -1866,17 +1867,17 @@ function KnockoutAssignSection({ matches, allTeams, onRefresh }: {
 
   // Clasificación final de grupos
   function computeGroupRanking() {
-    const map: Record<string, { team: any; pts: number; gd: number; gf: number }> = {}
-    for (const t of allTeams) map[t.id] = { team: t, pts: 0, gd: 0, gf: 0 }
+    const map: Record<string, { team: any; pts: number; gd: number; gf: number; w: number }> = {}
+    for (const t of allTeams) map[t.id] = { team: t, pts: 0, gd: 0, gf: 0, w: 0 }
     for (const m of matches) {
       if (m.match_type !== 'group' || m.status !== 'finished' || m.home_goals == null) continue
       const h = map[m.home_team_id ?? ''], a = map[m.away_team_id ?? '']
       if (!h || !a) continue
       h.gf += m.home_goals; h.gd += m.home_goals - m.away_goals!
       a.gf += m.away_goals!; a.gd += m.away_goals! - m.home_goals
-      if (m.home_goals > m.away_goals!) h.pts += 3
+      if (m.home_goals > m.away_goals!) { h.pts += 3; h.w++ }
       else if (m.home_goals === m.away_goals!) { h.pts++; a.pts++ }
-      else a.pts += 3
+      else { a.pts += 3; a.w++ }
     }
     const byGroup: Record<string, any[]> = {}
     for (const row of Object.values(map)) {
@@ -1884,7 +1885,7 @@ function KnockoutAssignSection({ matches, allTeams, onRefresh }: {
       ;(byGroup[g] ??= []).push(row)
     }
     for (const g of Object.keys(byGroup))
-      byGroup[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf)
+      byGroup[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.w - a.w)
     return byGroup
   }
 
@@ -1893,7 +1894,7 @@ function KnockoutAssignSection({ matches, allTeams, onRefresh }: {
     setBusy(true)
     const byGroup = computeGroupRanking()
     const thirds = Object.entries(byGroup).map(([g, rows]) => rows[2] ? { g, row: rows[2] } : null)
-      .filter(Boolean).sort((a: any, b: any) => b.row.pts - a.row.pts || b.row.gd - a.row.gd) as any[]
+      .filter(Boolean).sort((a: any, b: any) => b.row.pts - a.row.pts || b.row.gd - a.row.gd || b.row.gf - a.row.gf || b.row.w - a.row.w) as any[]
     const avail = [...thirds]
     function resolve(slot: string | null): string | null {
       if (!slot) return null
