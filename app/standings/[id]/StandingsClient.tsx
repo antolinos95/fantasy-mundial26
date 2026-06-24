@@ -1846,7 +1846,12 @@ function AdminTab({ league, matches, players, router }: {
             onClick={async () => {
               const newVal = !wildcardEnabled
               setWildcardEnabled(newVal)
-              await supabase.from('leagues').update({ wildcard_enabled: newVal }).eq('id', league.id)
+              const res = await fetch('/api/admin/wildcard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leagueId: league.id, enabled: newVal }),
+              })
+              if (!res.ok) setWildcardEnabled(!newVal) // revertir si falla
             }}
             className={`relative w-12 h-6 rounded-full transition-colors ${wildcardEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
             <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${wildcardEnabled ? 'left-7' : 'left-1'}`} />
