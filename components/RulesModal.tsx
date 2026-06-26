@@ -39,7 +39,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
           <Faq q="⚽ ¿Cómo se puntúa?">
             <p className="font-semibold">Por resultado del partido:</p>
             <Bullet>✅ Victoria: +2 puntos al propietario del equipo ganador</Bullet>
-            <Bullet>🤝 Empate: +1 punto a cada propietario</Bullet>
+            <Bullet>🤝 Empate: +1 punto a cada propietario. Si tienes <b>los dos equipos</b>, recibes +2 en total.</Bullet>
             <Bullet>Si una selección no tiene dueño, esos puntos no se asignan.</Bullet>
 
             <p className="font-semibold mt-2">🎯 Porra del marcador:</p>
