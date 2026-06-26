@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
     .eq('league_id', leagueId)
   const userIds = (players ?? []).map((p: any) => p.user_id).filter(Boolean) as string[]
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   await fetch(`${appUrl}/api/push/send`, {
     method: 'POST',
     headers: {
