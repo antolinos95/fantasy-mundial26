@@ -110,7 +110,7 @@ BEGIN
       SELECT ml.player_id,
         SUM(CASE pe.event_type
           WHEN 'goal' THEN 1.0 WHEN 'goal_extra_time' THEN 1.0
-          WHEN 'penalty_shootout' THEN 0.25 WHEN 'own_goal' THEN -1.0
+          WHEN 'penalty_shootout' THEN 0.5 WHEN 'own_goal' THEN -1.0
           WHEN 'red_card' THEN -1.0 ELSE 0 END) AS pts
       FROM match_lineups ml
       JOIN player_events pe ON pe.squad_player_id=ml.squad_player_id AND pe.match_id=ml.match_id
@@ -150,7 +150,7 @@ BEGIN
         SELECT ml.player_id,
           SUM(CASE pe.event_type
             WHEN 'goal' THEN 0.5 WHEN 'goal_extra_time' THEN 0.5
-            WHEN 'penalty_shootout' THEN 0.125 WHEN 'own_goal' THEN -1.0
+            WHEN 'penalty_shootout' THEN 0.25 WHEN 'own_goal' THEN -1.0
             WHEN 'red_card' THEN -1.0 ELSE 0 END) AS pts
         FROM match_lineups ml
         JOIN player_events pe ON pe.squad_player_id=ml.squad_player_id AND pe.match_id=ml.match_id

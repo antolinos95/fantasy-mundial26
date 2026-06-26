@@ -51,7 +51,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p className="font-semibold mt-2">⭐ Jugadores destacados:</p>
             <Bullet>Eliges 3 jugadores de tu selección por partido.</Bullet>
             <Bullet>⚽ Gol (reglamentario o prórroga) = +1</Bullet>
-            <Bullet>⚽ Penalti en tanda = +0,25</Bullet>
+            <Bullet>⚽ Penalti en tanda = +0,5</Bullet>
             <Bullet>🟥 Expulsión = −1 · 🥅 Gol en propia = −1</Bullet>
 
             <p className="font-semibold mt-2">🏅 Bonificaciones por clasificación (acumulativas):</p>
@@ -107,7 +107,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
 
               <p className="font-semibold mt-1">Jugadores: Selecciona 3 jugadores. Los goles puntúan a la mitad de su valor habitual:</p>
               <Bullet>Gol (reglamentario o prórroga): <b>0,5 puntos</b> (en lugar de 1).</Bullet>
-              <Bullet>Gol en tanda de penaltis: <b>0,125 puntos</b> (en lugar de 0,25).</Bullet>
+              <Bullet>Gol en tanda de penaltis: <b>0,25 puntos</b> (en lugar de 0,5).</Bullet>
               <Bullet>Los autogoles y las tarjetas rojas mantienen su penalización habitual de <b>−1 punto</b>.</Bullet>
 
               <p className="mt-1">❌ Si no aciertas ninguna de tus predicciones, perderás los 2 puntos de entrada.</p>
