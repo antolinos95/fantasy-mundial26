@@ -1,7 +1,6 @@
 -- schema_v20: fix empate con los dos equipos
--- Cuando un jugador tiene ambos equipos en un empate, debe recibir
--- 1 punto por cada equipo (2 en total), no solo 1.
--- El bug era la condición IS DISTINCT FROM que bloqueaba el segundo insert.
+-- Único cambio respecto a v14: en empate, quitar la condición
+-- IS DISTINCT FROM para que el mismo jugador con dos equipos reciba 2 pts.
 
 CREATE OR REPLACE FUNCTION recalculate_scores(p_match_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $recalc_v20$
@@ -57,8 +56,8 @@ BEGIN
         VALUES(v_league_id,v_away_own,p_match_id,'result',2,'Victoria');
       END IF;
     ELSE
-      -- Empate: cada propietario de equipo recibe 1 punto.
-      -- Si el mismo jugador tiene los dos, recibe 2 (un insert por cada equipo).
+      -- FIX v20: cada equipo da 1 pt independientemente; si el mismo jugador
+      -- tiene los dos, recibe 2 (un insert por equipo).
       IF v_home_own IS NOT NULL THEN
         INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
         VALUES(v_league_id,v_home_own,p_match_id,'result',1,'Empate');
@@ -84,14 +83,13 @@ BEGIN
       IF v_he AND NOT v_ae THEN
         INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
         VALUES(v_league_id,v_home_own,p_match_id,'prediction',1,'Porra robada');
+        INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
+        VALUES(v_league_id,v_away_own,p_match_id,'prediction',-1,'Porra perdida');
       ELSIF v_ae AND NOT v_he THEN
         INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
         VALUES(v_league_id,v_away_own,p_match_id,'prediction',1,'Porra robada');
-      ELSIF v_he AND v_ae THEN
         INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
-        VALUES(v_league_id,v_home_own,p_match_id,'prediction',1,'Porra acertada');
-        INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
-        VALUES(v_league_id,v_away_own,p_match_id,'prediction',1,'Porra acertada');
+        VALUES(v_league_id,v_home_own,p_match_id,'prediction',-1,'Porra perdida');
       END IF;
     ELSIF v_home_own IS NOT NULL THEN
       SELECT * INTO v_hp FROM predictions WHERE match_id=p_match_id AND player_id=v_home_own AND is_wildcard IS NOT TRUE;
@@ -107,107 +105,75 @@ BEGIN
       END IF;
     END IF;
 
-    -- ── JUGADORES DESTACADOS (propietarios) ──
+    -- ── JUGADORES DESTACADOS (propietarios, puntuación normal) ──
     FOR v_rec IN (
-      SELECT pe.squad_player_id, sp.team_id,
-             CASE pe.event_type
-               WHEN 'goal'            THEN 3
-               WHEN 'goal_extra_time' THEN 3
-               WHEN 'penalty_shootout'THEN 2
-               WHEN 'own_goal'        THEN -1
-               WHEN 'red_card'        THEN -1
-               ELSE 0
-             END AS pts,
-             pe.event_type
-      FROM player_events pe
-      JOIN squad_players sp ON sp.id = pe.squad_player_id
-      WHERE pe.match_id = p_match_id
-        AND pe.event_type IN ('goal','goal_extra_time','penalty_shootout','own_goal','red_card')
+      SELECT ml.player_id,
+        SUM(CASE pe.event_type
+          WHEN 'goal' THEN 1.0 WHEN 'goal_extra_time' THEN 0.5
+          WHEN 'penalty_shootout' THEN 0.25 WHEN 'own_goal' THEN -1.0
+          WHEN 'red_card' THEN -1.0 ELSE 0 END) AS pts
+      FROM match_lineups ml
+      JOIN player_events pe ON pe.squad_player_id=ml.squad_player_id AND pe.match_id=ml.match_id
+      JOIN players p ON p.id=ml.player_id
+      WHERE ml.match_id=p_match_id AND p.league_id=v_league_id
+        AND ml.is_wildcard IS NOT TRUE
+      GROUP BY ml.player_id
     ) LOOP
-      DECLARE v_owner uuid;
-      BEGIN
-        -- Propietario del equipo al que pertenece el jugador en esta liga
-        SELECT dt.player_id INTO v_owner FROM drafted_teams dt JOIN players p ON p.id=dt.player_id
-          WHERE dt.team_id=v_rec.team_id AND p.league_id=v_league_id LIMIT 1;
-
-        IF v_owner IS NOT NULL AND v_rec.pts <> 0 THEN
-          INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
-          VALUES(v_league_id,v_owner,p_match_id,'player',v_rec.pts,
-            CASE v_rec.event_type
-              WHEN 'goal'             THEN 'Gol'
-              WHEN 'goal_extra_time'  THEN 'Gol (prórroga)'
-              WHEN 'penalty_shootout' THEN 'Penalti'
-              WHEN 'own_goal'         THEN 'Autogol'
-              WHEN 'red_card'         THEN 'Tarjeta roja'
-            END);
-        END IF;
-      END;
+      IF v_rec.pts <> 0 THEN
+        INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
+        VALUES(v_league_id,v_rec.player_id,p_match_id,'player',v_rec.pts,'Jugadores destacados');
+      END IF;
     END LOOP;
 
-    -- ── WILDCARD (porras y jugadores de participantes sin equipo) ──
+    -- ── WILDCARD ──
     FOR v_wc IN (
-      SELECT we.player_id
+      SELECT we.player_id, we.qualifier_pick
       FROM wildcard_entries we
       WHERE we.match_id = p_match_id AND we.league_id = v_league_id
     ) LOOP
-      -- Porra wildcard
-      SELECT * INTO v_hp FROM predictions
-        WHERE match_id=p_match_id AND player_id=v_wc.player_id AND is_wildcard IS TRUE;
-      IF v_hp IS NOT NULL AND v_hp.home_goals=v_match.home_goals AND v_hp.away_goals=v_match.away_goals THEN
+      -- Acierto qualifier (+2)
+      IF v_winner_team IS NOT NULL AND v_wc.qualifier_pick = v_winner_team THEN
         INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
-        VALUES(v_league_id,v_wc.player_id,p_match_id,'prediction',1,'Porra wildcard acertada');
+        VALUES(v_league_id,v_wc.player_id,p_match_id,'wildcard_qualifier',2,'Wildcard: equipo correcto');
       END IF;
 
-      -- Jugadores wildcard
-      FOR v_rec IN (
-        SELECT pe.squad_player_id, sp.team_id,
-               CASE pe.event_type
-                 WHEN 'goal'            THEN 3
-                 WHEN 'goal_extra_time' THEN 3
-                 WHEN 'penalty_shootout'THEN 2
-                 WHEN 'own_goal'        THEN -1
-                 WHEN 'red_card'        THEN -1
-                 ELSE 0
-               END AS pts,
-               pe.event_type
-        FROM player_events pe
-        JOIN squad_players sp ON sp.id = pe.squad_player_id
-        WHERE pe.match_id = p_match_id
-          AND pe.event_type IN ('goal','goal_extra_time','penalty_shootout','own_goal','red_card')
-      ) LOOP
-        DECLARE v_sel boolean;
-        BEGIN
-          SELECT EXISTS(
-            SELECT 1 FROM match_lineups ml
-            WHERE ml.match_id=p_match_id AND ml.player_id=v_wc.player_id
-              AND ml.squad_player_id=v_rec.squad_player_id AND ml.is_wildcard IS TRUE
-          ) INTO v_sel;
+      -- Porra wildcard (+1 si acierta)
+      SELECT * INTO v_hp FROM predictions
+        WHERE match_id=p_match_id AND player_id=v_wc.player_id AND is_wildcard = true;
+      IF v_hp IS NOT NULL AND v_hp.home_goals=v_match.home_goals AND v_hp.away_goals=v_match.away_goals THEN
+        INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
+        VALUES(v_league_id,v_wc.player_id,p_match_id,'wildcard_prediction',1,'Wildcard: porra acertada');
+      END IF;
 
-          IF v_sel AND v_rec.pts <> 0 THEN
-            INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
-            VALUES(v_league_id,v_wc.player_id,p_match_id,'player',v_rec.pts,
-              CASE v_rec.event_type
-                WHEN 'goal'             THEN 'Gol (wildcard)'
-                WHEN 'goal_extra_time'  THEN 'Gol prórroga (wildcard)'
-                WHEN 'penalty_shootout' THEN 'Penalti (wildcard)'
-                WHEN 'own_goal'         THEN 'Autogol (wildcard)'
-                WHEN 'red_card'         THEN 'Tarjeta roja (wildcard)'
-              END);
-          END IF;
-        END;
+      -- Jugadores wildcard (puntuación reducida)
+      FOR v_rec IN (
+        SELECT ml.player_id,
+          SUM(CASE pe.event_type
+            WHEN 'goal' THEN 0.5 WHEN 'goal_extra_time' THEN 0.25
+            WHEN 'penalty_shootout' THEN 0.125 WHEN 'own_goal' THEN -1.0
+            WHEN 'red_card' THEN -1.0 ELSE 0 END) AS pts
+        FROM match_lineups ml
+        JOIN player_events pe ON pe.squad_player_id=ml.squad_player_id AND pe.match_id=ml.match_id
+        WHERE ml.match_id=p_match_id AND ml.player_id=v_wc.player_id
+          AND ml.is_wildcard = true
+        GROUP BY ml.player_id
+      ) LOOP
+        IF v_rec.pts <> 0 THEN
+          INSERT INTO score_log(league_id,player_id,match_id,category,points,detail)
+          VALUES(v_league_id,v_wc.player_id,p_match_id,'wildcard_player',v_rec.pts,'Wildcard: jugadores');
+        END IF;
       END LOOP;
     END LOOP;
 
   END LOOP;
 
-  -- ── ACTUALIZAR scores ──
-  FOR v_league_id IN SELECT unnest(v_leagues) LOOP
+  -- Reconstruir scores (incluyendo wildcard_entry que no se borró)
+  IF array_length(v_leagues,1) > 0 THEN
+    DELETE FROM scores WHERE league_id = ANY(v_leagues);
     INSERT INTO scores(league_id,player_id,points)
-    SELECT v_league_id, player_id, COALESCE(SUM(points),0)
-    FROM score_log WHERE league_id=v_league_id
-    GROUP BY player_id
-    ON CONFLICT(league_id,player_id) DO UPDATE SET points=EXCLUDED.points, updated_at=now();
-  END LOOP;
-
+    SELECT league_id, player_id, SUM(points)
+    FROM score_log WHERE league_id = ANY(v_leagues)
+    GROUP BY league_id, player_id;
+  END IF;
 END;
 $recalc_v20$;
