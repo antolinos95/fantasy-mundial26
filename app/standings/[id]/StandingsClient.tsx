@@ -2857,15 +2857,10 @@ function AnnouncementSection({ players, league }: { players: Player[]; league: L
   async function send() {
     if (!title.trim() || !body.trim()) return
     setSending(true)
-    // Guardar en BD para la pestaña Avisos
-    await supabase.from('announcements').insert({ league_id: league.id, title: title.trim(), body: body.trim() })
-    // Enviar push
-    const { data: { session } } = await supabase.auth.getSession()
-    const userIds = players.map(p => p.user_id).filter(Boolean) as string[]
-    await fetch('/api/push/announce', {
+    await fetch('/api/admin/announce', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
-      body: JSON.stringify({ title: title.trim(), body: body.trim(), url: `/standings/${league.id}`, userIds, leagueId: league.id }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leagueId: league.id, title: title.trim(), body: body.trim() }),
     })
     setSending(false)
     setSent(true)
