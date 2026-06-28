@@ -18,7 +18,7 @@ BEGIN
   v_ko:=v_m.match_type IS NOT NULL AND v_m.match_type<>'group';
   v_cls:=CASE WHEN v_ko THEN COALESCE(CASE WHEN v_win IS NULL THEN v_m.winner_team_id END,v_win) END;
 
-  DELETE FROM score_log WHERE match_id=p_match_id AND category<>'wildcard_entry';
+  DELETE FROM score_log WHERE match_id=p_match_id AND category NOT IN ('wildcard_entry','bonus');
 
   FOR v_lid IN (
     SELECT DISTINCT p.league_id FROM drafted_teams dt
