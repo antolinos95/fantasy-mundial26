@@ -406,7 +406,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
       const pts = evs.reduce((s: number, e: any) => s + (EVENT_PTS[e.event_type] ?? 0), 0)
       return { name: l.squad_player?.name ?? '?', events: evs.map((e: any) => EVENT_ICON_BD[e.event_type] ?? ''), pts }
     })
-    setBreakdowns(b => ({ ...b, [key]: rows }))
+    setBreakdowns(b => ({ ...b, [key]: rows.filter(r => r.pts !== 0) }))
   }
 
   // Totales por categoría
