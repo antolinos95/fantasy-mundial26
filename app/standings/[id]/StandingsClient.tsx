@@ -524,7 +524,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                         </div>
                       )
                     }
-                    const label2 = wc && e.category === 'wildcard_prediction'
+                    const label2 = (wc && (e.category === 'wildcard_prediction' || e.category === 'wildcard_player'))
                       ? `Wildcard: ${matchLabel}`
                       : noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
                     const isPlayerCat = e.category === 'player' || e.category === 'wildcard_player'
@@ -537,8 +537,8 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                           onClick={isPlayerCat && e.match_id ? () => loadBreakdown(e.match_id!, wc) : undefined}
                         >
                           <span className="flex-1 truncate text-xs">
-                            {wc && e.category !== 'wildcard_prediction' && <span className="text-[var(--yellow)] mr-1">🃏</span>}
-                            {e.detail && m && !noMatchLabel && e.category !== 'wildcard_prediction' ? `${e.detail} · ` : ''}{label2}
+                            {wc && !['wildcard_prediction','wildcard_player'].includes(e.category) && <span className="text-[var(--yellow)] mr-1">🃏</span>}
+                            {e.detail && m && !noMatchLabel && !['wildcard_prediction','wildcard_player'].includes(e.category) ? `${e.detail} · ` : ''}{label2}
                           </span>
                           <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : e.points === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
                             {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
