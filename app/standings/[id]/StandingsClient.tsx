@@ -425,12 +425,14 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                 <div className="space-y-1">
                   {items.map((e, idx) => {
                     const m = e.match
-                    const label = m
-                      ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
-                      : (e.detail ?? '')
+                    const label = cat === 'bonus'
+                      ? (e.detail ?? '')
+                      : m
+                        ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
+                        : (e.detail ?? '')
                     return (
                       <div key={idx} className="flex items-center gap-2 text-sm bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
-                        <span className="flex-1 truncate text-xs">{e.detail && m ? `${e.detail} · ` : ''}{label}</span>
+                        <span className="flex-1 truncate text-xs">{e.detail && m && cat !== 'bonus' ? `${e.detail} · ` : ''}{label}</span>
                         <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
                           {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
                         </span>
