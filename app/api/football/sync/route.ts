@@ -114,8 +114,8 @@ export async function GET(req: NextRequest) {
 
 
   // Pre-check: solo consultamos ESPN si hay un partido live ahora o que empiece en ≤5 min
-  // Usamos la ventana [now - 130min, now + 5min] para cubrir partidos en juego (hasta 120min) e inminentes
-  const windowStart = new Date(now - 130 * 60 * 1000).toISOString()
+  // Ventana [now - 210min, now + 5min]: cubre 90' + prórroga (30') + penaltis + margen
+  const windowStart = new Date(now - 210 * 60 * 1000).toISOString()
   const windowEnd   = new Date(now +   5 * 60 * 1000).toISOString()
 
   const { data: activeMatches } = await supabaseAdmin
@@ -236,7 +236,10 @@ export async function GET(req: NextRequest) {
       if (displayClock) updates.match_clock = displayClock
       const elapsedMin = parseMinute(displayClock)
       if (elapsedMin > 0) {
-        const realElapsed = elapsedMin > 45 ? elapsedMin + 15 : elapsedMin
+        // Añadir descansos: 15' de medio tiempo, y 15' más si es prórroga (>90')
+        const realElapsed = elapsedMin > 90 ? elapsedMin + 30
+                          : elapsedMin > 45 ? elapsedMin + 15
+                          : elapsedMin
         const calculatedKickoff = new Date(now - realElapsed * 60 * 1000)
         const storedKickoff = new Date(ourMatch.match_date)
         const diffMin = Math.abs(calculatedKickoff.getTime() - storedKickoff.getTime()) / 60000
