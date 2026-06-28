@@ -281,6 +281,7 @@ export async function GET(req: NextRequest) {
       }
 
       if (isFinished) {
+        await syncCleanSheets(ourMatch.id, homeId, awayId, espnHomeId, espnAwayId, comp.details ?? [])
         await supabaseAdmin.rpc('recalculate_scores', { p_match_id: ourMatch.id })
         log.push(`✓ Scores recalculated: ${homeEs} vs ${awayEs}`)
       }
@@ -394,6 +395,59 @@ async function syncESPNEvents(
   }
 
   return toInsert.length
+}
+
+async function syncCleanSheets(
+  matchId: string,
+  homeTeamId: string,
+  awayTeamId: string,
+  espnHomeId: string,
+  espnAwayId: string,
+  details: any[],
+): Promise<void> {
+  // Calcular goles en los 90' reglamentarios por equipo (excluir tanda y minuto > 90)
+  const goals90 = details.filter(d => d.scoringPlay && !d.shootout && (parseMinute(d.clock?.displayValue ?? '') || 0) <= 90)
+
+  // Goles que benefician a cada equipo en 90' (incluye autogoles que van al marcador contrario)
+  const homeScored90 = goals90.filter(d => d.team?.id === espnHomeId).length
+  const awayScored90 = goals90.filter(d => d.team?.id === espnAwayId).length
+
+  const cleanSheetTeams: { teamId: string }[] = []
+  if (awayScored90 === 0) cleanSheetTeams.push({ teamId: homeTeamId }) // home kept clean sheet
+  if (homeScored90 === 0) cleanSheetTeams.push({ teamId: awayTeamId }) // away kept clean sheet
+
+  if (cleanSheetTeams.length === 0) return
+
+  for (const { teamId } of cleanSheetTeams) {
+    const { data: players } = await supabaseAdmin
+      .from('squad_players')
+      .select('id, position')
+      .eq('team_id', teamId)
+      .in('position', ['GK', 'DF'])
+
+    if (!players?.length) continue
+
+    const toInsert = players.map(p => ({
+      match_id: matchId,
+      squad_player_id: p.id,
+      event_type: p.position === 'GK' ? 'clean_sheet_gk' : 'clean_sheet_def',
+      minute: null,
+      notified: true,
+    }))
+
+    // Evitar duplicados (por si se llama más de una vez)
+    const { data: existing } = await supabaseAdmin
+      .from('player_events')
+      .select('squad_player_id')
+      .eq('match_id', matchId)
+      .in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
+
+    const existingIds = new Set((existing ?? []).map(e => e.squad_player_id))
+    const newOnes = toInsert.filter(e => !existingIds.has(e.squad_player_id))
+    if (newOnes.length > 0) {
+      await supabaseAdmin.from('player_events').insert(newOnes)
+    }
+  }
 }
 
 async function sendEventNotifications(
