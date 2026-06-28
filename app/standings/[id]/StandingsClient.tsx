@@ -490,12 +490,14 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                         </div>
                       )
                     }
-                    const label2 = noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
+                    const label2 = wc && e.category === 'wildcard_prediction'
+                      ? `Wildcard: ${matchLabel}`
+                      : noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
                     return (
                       <div key={idx} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
                         <span className="flex-1 truncate text-xs">
-                          {wc && <span className="text-[var(--yellow)] mr-1">🃏</span>}
-                          {e.detail && m && !noMatchLabel ? `${e.detail} · ` : ''}{label2}
+                          {wc && e.category !== 'wildcard_prediction' && <span className="text-[var(--yellow)] mr-1">🃏</span>}
+                          {e.detail && m && !noMatchLabel && e.category !== 'wildcard_prediction' ? `${e.detail} · ` : ''}{label2}
                         </span>
                         <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : e.points === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
                           {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
