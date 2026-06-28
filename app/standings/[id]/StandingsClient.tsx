@@ -814,8 +814,8 @@ function AllPredictionsReveal({ match, players, leagueId }: {
       <div className="flex flex-wrap gap-1 mt-1">
         {plLineup.map((l, i) => {
           const evs     = events.filter(e => e.squad_player_id === l.squad_player_id)
-          const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
-          const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
+          const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout', 'assist', 'clean_sheet_gk', 'clean_sheet_def'].includes(e.event_type))
+          const hasBad  = evs.some(e => ['own_goal', 'red_card', 'penalty_missed', 'penalty_missed_shootout'].includes(e.event_type))
           const cls     = hasBad ? 'bg-red-900/40 border border-[var(--red)]' : hasGoal ? 'bg-green-900/40 border border-[var(--green)]' : 'bg-[var(--bg-surface)]'
           return (
             <span key={i} className={`text-[11px] px-2 py-0.5 rounded-lg ${cls}`}>
@@ -990,8 +990,8 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
                 const sp  = l.squad_player
                 const pts = playerPts(sp.id)
                 const evs = events.filter(e => e.squad_player_id === sp.id)
-                const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
-                const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
+                const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout', 'assist', 'clean_sheet_gk', 'clean_sheet_def'].includes(e.event_type))
+                const hasBad  = evs.some(e => ['own_goal', 'red_card', 'penalty_missed', 'penalty_missed_shootout'].includes(e.event_type))
                 const rowCls  = hasBad ? 'bg-red-900/30 border border-[var(--red)]' : hasGoal ? 'bg-green-900/30 border border-[var(--green)]' : 'bg-[var(--bg-elevated)]'
                 return (
                   <div key={i} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${rowCls}`}>
@@ -2586,6 +2586,7 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
 
   const EVENT_ICON: Record<string, string> = {
     goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
+    assist: '🎯', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
   const home = events.filter(e => e.squad_player?.team_id === homeTeamId)
