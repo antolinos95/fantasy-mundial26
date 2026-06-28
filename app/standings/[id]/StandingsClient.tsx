@@ -402,16 +402,13 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
 
           {/* Resumen por categoría */}
           {!loading && entries.length > 0 && (() => {
-            const wcPts = ['wildcard_entry','wildcard_qualifier','wildcard_prediction','wildcard_player']
-              .reduce((s, c) => s + (byCat[c] ?? 0), 0)
+            const wcCostPts = (byCat.wildcard_entry ?? 0) + (byCat.wildcard_qualifier ?? 0)
             const summaryGroups = [
               { key: 'result',     ...CAT_INFO.result,     pts: byCat.result ?? 0 },
-              { key: 'prediction', ...CAT_INFO.prediction, pts: byCat.prediction ?? 0 },
-              { key: 'player',     ...CAT_INFO.player,     pts: byCat.player ?? 0 },
+              { key: 'prediction', ...CAT_INFO.prediction, pts: (byCat.prediction ?? 0) + (byCat.wildcard_prediction ?? 0) },
+              { key: 'player',     ...CAT_INFO.player,     pts: (byCat.player ?? 0) + (byCat.wildcard_player ?? 0) },
               { key: 'bonus',      ...CAT_INFO.bonus,      pts: byCat.bonus ?? 0 },
-              ...(entries.some(e => e.category.startsWith('wildcard'))
-                ? [{ key: 'wildcard', label: 'Wildcard', icon: '🃏', pts: wcPts }]
-                : []),
+              ...(wcCostPts !== 0 ? [{ key: 'wildcard', label: 'Wildcard', icon: '🃏', pts: wcCostPts }] : []),
             ].filter(g => g.pts !== 0)
             return (
               <div className="grid grid-cols-2 gap-2">
@@ -430,28 +427,45 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
             )
           })()}
 
-          {/* Detalle por categoría */}
-          {!loading && (['result','prediction','player','bonus','wildcard_entry','wildcard_qualifier','wildcard_prediction','wildcard_player'] as const).map(cat => {
-            const items = entries.filter(e => e.category === cat)
-            if (!items.length) return null
-            const noMatch = cat === 'bonus' || cat.startsWith('wildcard')
-            return (
-              <div key={cat}>
+          {/* Detalle por categoría — porras y jugadores wildcard agrupados con los normales */}
+          {!loading && (() => {
+            type Group = { label: string; icon: string; items: { e: LogEntry; wc: boolean }[] }
+            const groups: Group[] = []
+
+            const addGroup = (label: string, icon: string, cats: string[]) => {
+              const items = entries
+                .filter(e => cats.includes(e.category))
+                .map(e => ({ e, wc: e.category.startsWith('wildcard') }))
+              if (items.length) groups.push({ label, icon, items })
+            }
+
+            addGroup('Resultados',            '⚽', ['result'])
+            addGroup('Porras',                '🎯', ['prediction', 'wildcard_prediction'])
+            addGroup('Jugadores destacados',  '⭐', ['player', 'wildcard_player'])
+            addGroup('Bonos de clasificación','🏅', ['bonus'])
+            addGroup('Wildcard',              '🃏', ['wildcard_entry', 'wildcard_qualifier'])
+
+            return groups.map(({ label, icon, items }) => (
+              <div key={label}>
                 <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5 mt-1">
-                  {CAT_INFO[cat].icon} {CAT_INFO[cat].label}
+                  {icon} {label}
                 </p>
                 <div className="space-y-1">
-                  {items.map((e, idx) => {
+                  {items.map(({ e, wc }, idx) => {
                     const m = e.match
-                    const label = noMatch
+                    const noMatchLabel = wc || e.category === 'bonus'
+                    const label2 = noMatchLabel
                       ? (e.detail ?? '')
                       : m
                         ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
                         : (e.detail ?? '')
                     return (
-                      <div key={idx} className="flex items-center gap-2 text-sm bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
-                        <span className="flex-1 truncate text-xs">{e.detail && m && !noMatch ? `${e.detail} · ` : ''}{label}</span>
-                        <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
+                      <div key={idx} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
+                        <span className="flex-1 truncate text-xs">
+                          {wc && <span className="text-[var(--yellow)] mr-1">🃏</span>}
+                          {e.detail && m && !noMatchLabel ? `${e.detail} · ` : ''}{label2}
+                        </span>
+                        <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : e.points === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
                           {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
                         </span>
                       </div>
@@ -459,8 +473,8 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                   })}
                 </div>
               </div>
-            )
-          })}
+            ))
+          })()}
         </div>
       </div>
     </div>
