@@ -2899,6 +2899,9 @@ function WildcardButton({ match, leagueId, myId }: {
   )
 }
 
+const POS_ORDER: Record<string, number> = { GK: 0, DF: 1, MF: 2, FW: 3 }
+const POS_LABEL: Record<string, string> = { GK: 'PT', DF: 'DF', MF: 'MC', FW: 'DL' }
+
 function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
   match: Match
   leagueId: string
@@ -2907,20 +2910,37 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
   onClose: () => void
   onDone: (entry: any) => void
 }) {
-  const [qualifierPick, setQualifierPick] = useState<string | null>(null)
-  const [homeGoals, setHomeGoals] = useState('')
-  const [awayGoals, setAwayGoals] = useState('')
+  const ssKey = `wc-${match.id}-${myId}`
+
+  const loadSaved = () => {
+    try { return JSON.parse(sessionStorage.getItem(ssKey) ?? 'null') } catch { return null }
+  }
+  const saved = loadSaved()
+
+  const [qualifierPick, setQualifierPick] = useState<string | null>(saved?.qualifierPick ?? null)
+  const [homeGoals, setHomeGoals] = useState<string>(saved?.homeGoals ?? '')
+  const [awayGoals, setAwayGoals] = useState<string>(saved?.awayGoals ?? '')
   const [squadPlayers, setSquadPlayers] = useState<SquadPlayer[]>([])
-  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>(saved?.selectedPlayers ?? [])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!match.home_team_id || !match.away_team_id) return
     supabase.from('squad_players').select('*')
       .in('team_id', [match.home_team_id, match.away_team_id])
-      .order('name')
-      .then(({ data }) => setSquadPlayers(data ?? []))
+      .then(({ data }) => {
+        const sorted = (data ?? []).sort((a: SquadPlayer, b: SquadPlayer) =>
+          (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9) ||
+          ((a.shirt_number ?? 99) - (b.shirt_number ?? 99))
+        )
+        setSquadPlayers(sorted)
+      })
   }, [match.home_team_id, match.away_team_id])
+
+  // Persistir selecciones en sessionStorage para sobrevivir recargas
+  useEffect(() => {
+    sessionStorage.setItem(ssKey, JSON.stringify({ qualifierPick, homeGoals, awayGoals, selectedPlayers }))
+  }, [qualifierPick, homeGoals, awayGoals, selectedPlayers, ssKey])
 
   function togglePlayer(id: string) {
     setSelectedPlayers(prev =>
@@ -2932,14 +2952,12 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
     if (!qualifierPick) { alert('Elige qué equipo pasa'); return }
     setSaving(true)
     try {
-      // 1. Registrar entrada y descontar 2 pts
       const { error: entryErr } = await supabase.rpc('enter_wildcard', {
         p_league_id: leagueId, p_player_id: myId,
         p_match_id: match.id, p_qualifier_pick: qualifierPick,
       })
       if (entryErr) { alert(entryErr.message); return }
 
-      // 2. Guardar porra wildcard
       if (homeGoals !== '' && awayGoals !== '') {
         await supabase.from('predictions').upsert({
           match_id: match.id, player_id: myId, league_id: leagueId,
@@ -2948,7 +2966,6 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
         }, { onConflict: 'match_id,player_id' })
       }
 
-      // 3. Guardar alineación wildcard
       if (selectedPlayers.length > 0) {
         await supabase.from('match_lineups').delete()
           .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true)
@@ -2961,6 +2978,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
         )
       }
 
+      sessionStorage.removeItem(ssKey)
       const { data: entry } = await supabase.from('wildcard_entries')
         .select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle()
       onDone(entry)
@@ -2972,11 +2990,45 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
   const homePlayers = squadPlayers.filter(s => s.team_id === match.home_team_id)
   const awayPlayers = squadPlayers.filter(s => s.team_id === match.away_team_id)
 
+  function renderTeamPlayers(players: SquadPlayer[], flag: string, teamName: string) {
+    return (
+      <div className="mb-4">
+        <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">{flag} {teamName}</p>
+        <div className="space-y-1">
+          {players.map(sp => {
+            const selected = selectedPlayers.includes(sp.id)
+            const disabled = !selected && selectedPlayers.length >= 3
+            return (
+              <button key={sp.id} onClick={() => togglePlayer(sp.id)} disabled={disabled}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
+                  selected ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-white'
+                  : disabled ? 'border-[var(--border)] opacity-30 cursor-not-allowed'
+                  : 'border-[var(--border)] hover:border-[var(--accent)]/50'
+                }`}>
+                <span className="text-[10px] font-bold text-[var(--text-muted)] w-5 shrink-0 text-right">
+                  {sp.shirt_number ?? '·'}
+                </span>
+                <span className={`text-[10px] font-bold px-1 rounded shrink-0 ${
+                  sp.position === 'GK' ? 'bg-yellow-500/20 text-yellow-400'
+                  : sp.position === 'DF' ? 'bg-blue-500/20 text-blue-400'
+                  : sp.position === 'MF' ? 'bg-green-500/20 text-green-400'
+                  : 'bg-red-500/20 text-red-400'
+                }`}>{POS_LABEL[sp.position] ?? sp.position}</span>
+                <span className="text-sm truncate">{sp.name}</span>
+                {selected && <span className="ml-auto text-[var(--accent)] shrink-0">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)] sticky top-0 bg-[var(--bg-surface)]">
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)] shrink-0">
           <p className="font-black text-lg">⚡ Wildcard{' '}
             <span className={`text-sm font-normal ${entryCost === 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
               {entryCost === 0 ? 'Gratis' : `−${entryCost} pt${entryCost > 1 ? 's' : ''}`}
@@ -2984,7 +3036,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
           </p>
           <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
         </div>
-        <div className="p-4 space-y-5">
+        <div className="overflow-y-auto flex-1 p-4 space-y-5">
 
           {/* Equipo que pasa */}
           <div>
@@ -3004,43 +3056,27 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
           <div>
             <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Porra <span className="text-[var(--accent)]">+1 pt</span></p>
             <div className="flex items-center gap-3 justify-center">
-              <span className="text-sm">{match.home_team?.flag_emoji} {match.home_team?.name}</span>
+              <span className="text-sm">{match.home_team?.flag_emoji}</span>
               <input type="number" min={0} max={20} value={homeGoals} onChange={e => setHomeGoals(e.target.value)}
                 className="w-12 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-black text-white text-lg focus:outline-none focus:border-[var(--accent)]" />
               <span className="text-[var(--text-secondary)]">-</span>
               <input type="number" min={0} max={20} value={awayGoals} onChange={e => setAwayGoals(e.target.value)}
                 className="w-12 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center font-black text-white text-lg focus:outline-none focus:border-[var(--accent)]" />
-              <span className="text-sm">{match.away_team?.name} {match.away_team?.flag_emoji}</span>
+              <span className="text-sm">{match.away_team?.flag_emoji}</span>
             </div>
           </div>
 
           {/* Jugadores */}
           <div>
-            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
-              3 jugadores <span className="text-[var(--text-muted)]">({selectedPlayers.length}/3) — puntuación completa</span>
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+              3 jugadores <span className="text-[var(--text-muted)]">({selectedPlayers.length}/3)</span>
             </p>
-            {[{ label: match.home_team?.name ?? '', players: homePlayers },
-              { label: match.away_team?.name ?? '', players: awayPlayers }].map(group => (
-              <div key={group.label} className="mb-3">
-                <p className="text-xs text-[var(--text-secondary)] mb-1">{group.label}</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {group.players.map(sp => (
-                    <button key={sp.id} onClick={() => togglePlayer(sp.id)}
-                      className={`text-xs px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                        selectedPlayers.includes(sp.id)
-                          ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-white'
-                          : selectedPlayers.length >= 3
-                          ? 'border-[var(--border)] opacity-40'
-                          : 'border-[var(--border)] hover:border-[var(--accent)]/50'
-                      }`}>
-                      {sp.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+            {renderTeamPlayers(homePlayers, match.home_team?.flag_emoji ?? '', match.home_team?.name ?? '')}
+            {renderTeamPlayers(awayPlayers, match.away_team?.flag_emoji ?? '', match.away_team?.name ?? '')}
           </div>
+        </div>
 
+        <div className="p-4 border-t border-[var(--border)] shrink-0">
           <button onClick={confirm} disabled={saving || !qualifierPick}
             className="w-full py-3 bg-[var(--accent)] text-white font-black rounded-xl disabled:opacity-40 transition-opacity">
             {saving ? 'Guardando…' : entryCost === 0 ? '⚡ Confirmar (gratis)' : `⚡ Confirmar (−${entryCost} pt${entryCost > 1 ? 's' : ''} al cierre)`}
