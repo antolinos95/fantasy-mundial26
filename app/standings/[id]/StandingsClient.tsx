@@ -443,7 +443,24 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
             addGroup('Porras',                '🎯', ['prediction', 'wildcard_prediction'])
             addGroup('Jugadores destacados',  '⭐', ['player', 'wildcard_player'])
             addGroup('Bonos de clasificación','🏅', ['bonus'])
-            addGroup('Wildcard',              '🃏', ['wildcard_entry', 'wildcard_qualifier'])
+            // Wildcard entrada+clasificado: agrupar por partido en una sola línea
+            const wcCostEntries = entries.filter(e => ['wildcard_entry','wildcard_qualifier'].includes(e.category))
+            if (wcCostEntries.length) {
+              const byMatch: Record<string, LogEntry[]> = {}
+              for (const e of wcCostEntries) {
+                const key = e.match_id ?? 'none'
+                byMatch[key] = byMatch[key] ?? []
+                byMatch[key].push(e)
+              }
+              groups.push({
+                label: 'Wildcard', icon: '🃏',
+                items: Object.values(byMatch).map(es => ({
+                  e: es[0],
+                  wc: true,
+                  extra: es,
+                })) as any,
+              })
+            }
 
             return groups.map(({ label, icon, items }) => (
               <div key={label}>
@@ -451,14 +468,29 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                   {icon} {label}
                 </p>
                 <div className="space-y-1">
-                  {items.map(({ e, wc }, idx) => {
+                  {items.map(({ e, wc, extra }: any, idx: number) => {
                     const m = e.match
                     const noMatchLabel = wc || e.category === 'bonus'
-                    const label2 = noMatchLabel
-                      ? (e.detail ?? '')
-                      : m
-                        ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
-                        : (e.detail ?? '')
+                    const matchLabel = m
+                      ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
+                      : ''
+                    // Wildcard entrada+clasificado: una línea con partido + detalles + pts totales
+                    if (extra) {
+                      const totalPts = (extra as LogEntry[]).reduce((s: number, x: LogEntry) => s + x.points, 0)
+                      const details = (extra as LogEntry[]).map((x: LogEntry) => x.detail).filter(Boolean).join(' · ')
+                      return (
+                        <div key={idx} className="bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
+                          {matchLabel && <p className="text-[10px] text-[var(--text-secondary)] truncate mb-0.5">{matchLabel}</p>}
+                          <div className="flex items-center gap-2">
+                            <span className="flex-1 truncate text-xs">{details}</span>
+                            <span className={`font-bold shrink-0 ${totalPts < 0 ? 'text-[var(--red)]' : totalPts === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
+                              {totalPts > 0 ? '+' : ''}{fmtPts(totalPts)}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                    const label2 = noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
                     return (
                       <div key={idx} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
                         <span className="flex-1 truncate text-xs">
