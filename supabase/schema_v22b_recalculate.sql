@@ -39,10 +39,13 @@ BEGIN
     SELECT * INTO v_ap FROM predictions WHERE match_id=p_mid AND player_id=p_aown AND is_wildcard IS NOT TRUE;
     v_he:=v_hp IS NOT NULL AND v_hp.home_goals=p_hg AND v_hp.away_goals=p_ag;
     v_ae:=v_ap IS NOT NULL AND v_ap.home_goals=p_hg AND v_ap.away_goals=p_ag;
-    IF v_he AND NOT v_ae THEN
+    IF v_he AND v_ae THEN
+      INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_hown,p_mid,'prediction',1,'Porra acertada');
+      INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_aown,p_mid,'prediction',1,'Porra acertada');
+    ELSIF v_he THEN
       INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_hown,p_mid,'prediction',1,'Porra robada');
       INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_aown,p_mid,'prediction',-1,'Porra perdida');
-    ELSIF v_ae AND NOT v_he THEN
+    ELSIF v_ae THEN
       INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_aown,p_mid,'prediction',1,'Porra robada');
       INSERT INTO score_log(league_id,player_id,match_id,category,points,detail) VALUES(p_lid,p_hown,p_mid,'prediction',-1,'Porra perdida');
     END IF;
