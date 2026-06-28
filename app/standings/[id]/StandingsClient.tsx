@@ -345,10 +345,14 @@ interface LogEntry {
 }
 
 const CAT_INFO: Record<string, { label: string; icon: string }> = {
-  result:     { label: 'Resultados',          icon: '⚽' },
-  prediction: { label: 'Porras',              icon: '🎯' },
-  player:     { label: 'Jugadores destacados', icon: '⭐' },
-  bonus:      { label: 'Bonos de clasificación', icon: '🏅' },
+  result:              { label: 'Resultados',           icon: '⚽' },
+  prediction:          { label: 'Porras',               icon: '🎯' },
+  player:              { label: 'Jugadores destacados',  icon: '⭐' },
+  bonus:               { label: 'Bonos de clasificación', icon: '🏅' },
+  wildcard_entry:      { label: 'Wildcard entrada',      icon: '🃏' },
+  wildcard_qualifier:  { label: 'Wildcard clasificado',  icon: '🃏' },
+  wildcard_prediction: { label: 'Wildcard porra',        icon: '🃏' },
+  wildcard_player:     { label: 'Wildcard jugadores',    icon: '🃏' },
 }
 
 function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
@@ -397,26 +401,40 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
           )}
 
           {/* Resumen por categoría */}
-          {!loading && entries.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
-              {Object.entries(CAT_INFO).map(([cat, info]) => (
-                <div key={cat} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-xl px-3 py-2.5">
-                  <span className="text-lg">{info.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider truncate">{info.label}</p>
-                    <p className={`font-black ${(byCat[cat] ?? 0) < 0 ? 'text-[var(--red)]' : ''}`}>
-                      {(byCat[cat] ?? 0) > 0 ? '+' : ''}{fmtPts(byCat[cat] ?? 0)}
-                    </p>
+          {!loading && entries.length > 0 && (() => {
+            const wcPts = ['wildcard_entry','wildcard_qualifier','wildcard_prediction','wildcard_player']
+              .reduce((s, c) => s + (byCat[c] ?? 0), 0)
+            const summaryGroups = [
+              { key: 'result',     ...CAT_INFO.result,     pts: byCat.result ?? 0 },
+              { key: 'prediction', ...CAT_INFO.prediction, pts: byCat.prediction ?? 0 },
+              { key: 'player',     ...CAT_INFO.player,     pts: byCat.player ?? 0 },
+              { key: 'bonus',      ...CAT_INFO.bonus,      pts: byCat.bonus ?? 0 },
+              ...(entries.some(e => e.category.startsWith('wildcard'))
+                ? [{ key: 'wildcard', label: 'Wildcard', icon: '🃏', pts: wcPts }]
+                : []),
+            ].filter(g => g.pts !== 0)
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                {summaryGroups.map(g => (
+                  <div key={g.key} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-xl px-3 py-2.5">
+                    <span className="text-lg">{g.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider truncate">{g.label}</p>
+                      <p className={`font-black ${g.pts < 0 ? 'text-[var(--red)]' : ''}`}>
+                        {g.pts > 0 ? '+' : ''}{fmtPts(g.pts)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )
+          })()}
 
           {/* Detalle por categoría */}
-          {!loading && (['result','prediction','player','bonus'] as const).map(cat => {
+          {!loading && (['result','prediction','player','bonus','wildcard_entry','wildcard_qualifier','wildcard_prediction','wildcard_player'] as const).map(cat => {
             const items = entries.filter(e => e.category === cat)
             if (!items.length) return null
+            const noMatch = cat === 'bonus' || cat.startsWith('wildcard')
             return (
               <div key={cat}>
                 <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5 mt-1">
@@ -425,14 +443,14 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                 <div className="space-y-1">
                   {items.map((e, idx) => {
                     const m = e.match
-                    const label = cat === 'bonus'
+                    const label = noMatch
                       ? (e.detail ?? '')
                       : m
                         ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
                         : (e.detail ?? '')
                     return (
                       <div key={idx} className="flex items-center gap-2 text-sm bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
-                        <span className="flex-1 truncate text-xs">{e.detail && m && cat !== 'bonus' ? `${e.detail} · ` : ''}{label}</span>
+                        <span className="flex-1 truncate text-xs">{e.detail && m && !noMatch ? `${e.detail} · ` : ''}{label}</span>
                         <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
                           {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
                         </span>
