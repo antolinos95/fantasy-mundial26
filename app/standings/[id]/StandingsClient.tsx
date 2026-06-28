@@ -355,6 +355,8 @@ const CAT_INFO: Record<string, { label: string; icon: string }> = {
   wildcard_player:     { label: 'Wildcard jugadores',    icon: '🃏' },
 }
 
+type PlayerEventRow = { name: string; events: string[]; pts: number }
+
 function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
   player: Player
   leagueId: string
@@ -363,6 +365,8 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
 }) {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [breakdowns, setBreakdowns] = useState<Record<string, PlayerEventRow[]>>({})
 
   useEffect(() => {
     supabase.from('score_log')
@@ -374,6 +378,36 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
         setLoading(false)
       })
   }, [leagueId, player.id])
+
+  const EVENT_PTS: Record<string, number> = {
+    goal: 1, goal_extra_time: 1, penalty_shootout: 0.5, assist: 0.5,
+    clean_sheet_gk: 2, clean_sheet_def: 1, penalty_missed: -0.5,
+    penalty_missed_shootout: -0.25, own_goal: -1, red_card: -1,
+  }
+  const EVENT_ICON_BD: Record<string, string> = {
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', assist: '🎯',
+    clean_sheet_gk: '🧤', clean_sheet_def: '🛡️', penalty_missed: '❌',
+    penalty_missed_shootout: '❌', own_goal: '🥅', red_card: '🟥',
+  }
+
+  async function loadBreakdown(matchId: string, isWc: boolean) {
+    const key = `${matchId}-${isWc}`
+    if (expanded === key) { setExpanded(null); return }
+    setExpanded(key)
+    if (breakdowns[key]) return
+    const [{ data: lineups }, { data: events }] = await Promise.all([
+      supabase.from('match_lineups').select('squad_player_id, squad_player:squad_players(name)')
+        .eq('match_id', matchId).eq('player_id', player.id).eq('is_wildcard', isWc),
+      supabase.from('player_events').select('squad_player_id, event_type')
+        .eq('match_id', matchId),
+    ])
+    const rows: PlayerEventRow[] = (lineups ?? []).map((l: any) => {
+      const evs = (events ?? []).filter((e: any) => e.squad_player_id === l.squad_player_id)
+      const pts = evs.reduce((s: number, e: any) => s + (EVENT_PTS[e.event_type] ?? 0), 0)
+      return { name: l.squad_player?.name ?? '?', events: evs.map((e: any) => EVENT_ICON_BD[e.event_type] ?? ''), pts }
+    })
+    setBreakdowns(b => ({ ...b, [key]: rows }))
+  }
 
   // Totales por categoría
   const byCat = entries.reduce<Record<string, number>>((acc, e) => {
@@ -493,15 +527,40 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                     const label2 = wc && e.category === 'wildcard_prediction'
                       ? `Wildcard: ${matchLabel}`
                       : noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
+                    const isPlayerCat = e.category === 'player' || e.category === 'wildcard_player'
+                    const bdKey = `${e.match_id}-${wc}`
+                    const isOpen = expanded === bdKey
                     return (
-                      <div key={idx} className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5">
-                        <span className="flex-1 truncate text-xs">
-                          {wc && e.category !== 'wildcard_prediction' && <span className="text-[var(--yellow)] mr-1">🃏</span>}
-                          {e.detail && m && !noMatchLabel && e.category !== 'wildcard_prediction' ? `${e.detail} · ` : ''}{label2}
-                        </span>
-                        <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : e.points === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
-                          {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
-                        </span>
+                      <div key={idx}>
+                        <div
+                          className={`flex items-center gap-2 bg-[var(--bg-elevated)] rounded-lg px-3 py-1.5 ${isPlayerCat ? 'cursor-pointer' : ''}`}
+                          onClick={isPlayerCat && e.match_id ? () => loadBreakdown(e.match_id!, wc) : undefined}
+                        >
+                          <span className="flex-1 truncate text-xs">
+                            {wc && e.category !== 'wildcard_prediction' && <span className="text-[var(--yellow)] mr-1">🃏</span>}
+                            {e.detail && m && !noMatchLabel && e.category !== 'wildcard_prediction' ? `${e.detail} · ` : ''}{label2}
+                          </span>
+                          <span className={`font-bold shrink-0 ${e.points < 0 ? 'text-[var(--red)]' : e.points === 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--green)]'}`}>
+                            {e.points > 0 ? '+' : ''}{fmtPts(e.points)}
+                          </span>
+                          {isPlayerCat && <span className="text-[var(--text-secondary)] text-xs">{isOpen ? '▲' : '▼'}</span>}
+                        </div>
+                        {isOpen && breakdowns[bdKey] && (
+                          <div className="ml-3 mt-1 space-y-0.5">
+                            {breakdowns[bdKey].map((row, i) => (
+                              <div key={i} className="flex items-center gap-2 bg-[var(--bg-surface)] rounded-lg px-3 py-1">
+                                <span className="flex-1 text-xs truncate">{row.name}</span>
+                                <span className="text-xs">{row.events.join(' ')}</span>
+                                <span className={`text-xs font-bold shrink-0 ${row.pts < 0 ? 'text-[var(--red)]' : row.pts > 0 ? 'text-[var(--green)]' : 'text-[var(--text-secondary)]'}`}>
+                                  {row.pts > 0 ? '+' : ''}{fmtPts(row.pts)}
+                                </span>
+                              </div>
+                            ))}
+                            {breakdowns[bdKey].length === 0 && (
+                              <p className="text-xs text-[var(--text-secondary)] px-3">Sin jugadores registrados</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
