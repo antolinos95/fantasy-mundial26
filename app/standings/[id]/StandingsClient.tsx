@@ -684,30 +684,82 @@ function AllPredictionsReveal({ match, players, leagueId }: {
   players: Player[]
   leagueId: string
 }) {
-  const [preds, setPreds]     = useState<{ player_id: string; home_goals: number; away_goals: number }[]>([])
-  const [lineups, setLineups] = useState<{ player_id: string; squad_player_id: string; squad_player: SquadPlayer }[]>([])
+  const [preds, setPreds]     = useState<{ player_id: string; home_goals: number; away_goals: number; is_wildcard: boolean }[]>([])
+  const [lineups, setLineups] = useState<{ player_id: string; squad_player_id: string; squad_player: SquadPlayer; is_wildcard: boolean }[]>([])
   const [events, setEvents]   = useState<{ squad_player_id: string; event_type: string }[]>([])
+  const [wcEntries, setWcEntries] = useState<{ player_id: string; qualifier_pick: string | null; cost_charged: boolean }[]>([])
   const [open, setOpen]       = useState(false)
   const [loaded, setLoaded]   = useState(false)
 
   useEffect(() => {
     if (!open || loaded) return
     Promise.all([
-      supabase.from('predictions').select('player_id, home_goals, away_goals')
-        .eq('match_id', match.id).eq('is_wildcard', false),
-      supabase.from('match_lineups').select('player_id, squad_player_id, squad_player:squad_players(*)')
-        .eq('match_id', match.id).eq('is_wildcard', false),
+      supabase.from('predictions').select('player_id, home_goals, away_goals, is_wildcard')
+        .eq('match_id', match.id),
+      supabase.from('match_lineups').select('player_id, squad_player_id, squad_player:squad_players(*), is_wildcard')
+        .eq('match_id', match.id),
       supabase.from('player_events').select('squad_player_id, event_type')
         .eq('match_id', match.id),
-    ]).then(([pr, lu, ev]) => {
-      setPreds(pr.data ?? [])
+      supabase.from('wildcard_entries').select('player_id, qualifier_pick, cost_charged')
+        .eq('match_id', match.id).eq('league_id', leagueId),
+    ]).then(([pr, lu, ev, wc]) => {
+      setPreds((pr.data as any[]) ?? [])
       setLineups((lu.data as any[]) ?? [])
       setEvents((ev.data as any[]) ?? [])
+      setWcEntries((wc.data as any[]) ?? [])
       setLoaded(true)
     })
-  }, [open, loaded, match.id])
+  }, [open, loaded, match.id, leagueId])
 
   const playerName = (id: string) => players.find(p => p.id === id)?.name ?? '?'
+
+  // qualifier_pick team name: look up in match teams
+  function qualifierName(teamId: string | null) {
+    if (!teamId) return '?'
+    if (teamId === match.home_team_id) return match.home_team?.name ?? match.slot_home ?? '?'
+    if (teamId === match.away_team_id) return match.away_team?.name ?? match.slot_away ?? '?'
+    return '?'
+  }
+
+  // winner team id (in 90' or via winner_team_id for KO draws)
+  const winnerTeamId: string | null = match.status === 'finished'
+    ? ((match as any).winner_team_id ?? (
+        match.home_goals != null && match.away_goals != null
+          ? match.home_goals > match.away_goals ? match.home_team_id
+          : match.away_goals > match.home_goals ? match.away_team_id
+          : null
+          : null
+      ))
+    : null
+
+  // All players who participated (regular or wildcard)
+  const regularPlayers = players.filter(pl =>
+    preds.some(p => p.player_id === pl.id && !p.is_wildcard) ||
+    lineups.some(l => l.player_id === pl.id && !l.is_wildcard)
+  )
+  const wildcardPlayers = wcEntries.map(wc => players.find(p => p.id === wc.player_id)).filter(Boolean) as Player[]
+
+  function renderLineup(plId: string, isWc: boolean) {
+    const plLineup = lineups.filter(l => l.player_id === plId && l.is_wildcard === isWc)
+    if (!plLineup.length) return null
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {plLineup.map((l, i) => {
+          const evs     = events.filter(e => e.squad_player_id === l.squad_player_id)
+          const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
+          const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
+          const cls     = hasBad ? 'bg-red-900/40 border border-[var(--red)]' : hasGoal ? 'bg-green-900/40 border border-[var(--green)]' : 'bg-[var(--bg-surface)]'
+          return (
+            <span key={i} className={`text-[11px] px-2 py-0.5 rounded-lg ${cls}`}>
+              {l.squad_player.name}
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const isKo = match.match_type && match.match_type !== 'group'
 
   return (
     <div className="border-t border-[var(--border)] mt-3 pt-3">
@@ -720,10 +772,9 @@ function AllPredictionsReveal({ match, players, leagueId }: {
       </button>
       {open && (
         <div className="mt-3 space-y-3">
-          {players.map(pl => {
-            const pred = preds.find(p => p.player_id === pl.id)
-            const plLineup = lineups.filter(l => l.player_id === pl.id)
-            if (!pred && plLineup.length === 0) return null
+          {/* Regular players */}
+          {regularPlayers.map(pl => {
+            const pred = preds.find(p => p.player_id === pl.id && !p.is_wildcard)
             return (
               <div key={pl.id} className="bg-[var(--bg-elevated)] rounded-xl px-3 py-2">
                 <p className="text-xs font-bold mb-1.5">{pl.name}</p>
@@ -737,25 +788,45 @@ function AllPredictionsReveal({ match, players, leagueId }: {
                     )}
                   </p>
                 )}
-                {plLineup.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {plLineup.map((l, i) => {
-                      const evs     = events.filter(e => e.squad_player_id === l.squad_player_id)
-                      const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout'].includes(e.event_type))
-                      const hasBad  = evs.some(e => ['own_goal', 'red_card'].includes(e.event_type))
-                      const cls     = hasBad ? 'bg-red-900/40 border border-[var(--red)]' : hasGoal ? 'bg-green-900/40 border border-[var(--green)]' : 'bg-[var(--bg-surface)]'
-                      return (
-                        <span key={i} className={`text-[11px] px-2 py-0.5 rounded-lg ${cls}`}>
-                          {l.squad_player.name}
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
+                {renderLineup(pl.id, false)}
               </div>
             )
           })}
-          {preds.length === 0 && lineups.length === 0 && (
+
+          {/* Wildcard players */}
+          {wildcardPlayers.map(pl => {
+            const wc   = wcEntries.find(e => e.player_id === pl.id)!
+            const pred = preds.find(p => p.player_id === pl.id && p.is_wildcard)
+            const qName = qualifierName(wc.qualifier_pick)
+            const qCorrect = match.status === 'finished' && wc.qualifier_pick && winnerTeamId
+              ? wc.qualifier_pick === winnerTeamId
+              : null
+            return (
+              <div key={pl.id} className="bg-[var(--bg-elevated)] border border-[var(--yellow)]/30 rounded-xl px-3 py-2">
+                <p className="text-xs font-bold mb-1.5">🃏 {pl.name} <span className="text-[var(--yellow)] font-normal">wildcard</span></p>
+                {isKo && (
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">
+                    🏆 Clasificado: <span className="text-white font-semibold">{qName}</span>
+                    {qCorrect === true && <span className="text-[var(--green)] ml-1">✓</span>}
+                    {qCorrect === false && <span className="text-[var(--red)] ml-1">✗</span>}
+                  </p>
+                )}
+                {pred && (
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">
+                    🎯 Porra: <span className="text-white font-semibold">{pred.home_goals} - {pred.away_goals}</span>
+                    {match.status === 'finished' && match.home_goals !== null && (
+                      pred.home_goals === match.home_goals && pred.away_goals === match.away_goals
+                        ? <span className="text-[var(--green)] ml-1">✓</span>
+                        : <span className="text-[var(--red)] ml-1">✗</span>
+                    )}
+                  </p>
+                )}
+                {renderLineup(pl.id, true)}
+              </div>
+            )
+          })}
+
+          {regularPlayers.length === 0 && wildcardPlayers.length === 0 && (
             <p className="text-xs text-[var(--text-secondary)]">Nadie ha enviado porra o jugadores aún</p>
           )}
         </div>
@@ -1142,6 +1213,9 @@ function MatchesTab({
           !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
           <WildcardButton match={m} leagueId={leagueId} myId={myId} />
         )}
+        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && (
+          <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
+        )}
         {isRevealed(m) && (
           <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
         )}
@@ -1263,6 +1337,9 @@ function MatchesTab({
                     {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
                       !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? '') && (
                       <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+                    )}
+                    {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && (
+                      <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
                     )}
 
                     {/* Porras y jugadores de todos — visible 1h antes */}
@@ -2064,14 +2141,23 @@ function classifyGoal(minute: number | null): 'goal' | 'goal_extra_time' {
 const EVENT_ICON: Record<string, string> = {
   goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽',
   red_card: '🟥', own_goal: '🥅',
+  assist: '🎯', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️',
+  penalty_missed: '❌', penalty_missed_shootout: '❌',
 }
 
 type AddEventType = 'goal' | 'own_goal' | 'penalty_shootout' | 'red_card'
+  | 'assist' | 'clean_sheet_gk' | 'clean_sheet_def'
+  | 'penalty_missed' | 'penalty_missed_shootout'
 const ADD_EVENT_OPTIONS: { value: AddEventType; label: string; hasMinute: boolean }[] = [
-  { value: 'goal',             label: '⚽ Gol',               hasMinute: true  },
-  { value: 'own_goal',         label: '🥅 Autogol',           hasMinute: true  },
-  { value: 'red_card',         label: '🟥 Expulsión',         hasMinute: true  },
-  { value: 'penalty_shootout', label: '⚽ Penalti (tanda)',   hasMinute: false },
+  { value: 'goal',                    label: '⚽ Gol',                      hasMinute: true  },
+  { value: 'assist',                  label: '🎯 Asistencia',               hasMinute: true  },
+  { value: 'own_goal',                label: '🥅 Autogol',                  hasMinute: true  },
+  { value: 'red_card',                label: '🟥 Expulsión',                hasMinute: true  },
+  { value: 'penalty_shootout',        label: '⚽ Penalti (tanda)',          hasMinute: false },
+  { value: 'penalty_missed',          label: '❌ Penalti fallado (90\')',   hasMinute: true  },
+  { value: 'penalty_missed_shootout', label: '❌ Penalti fallado (tanda)',  hasMinute: false },
+  { value: 'clean_sheet_gk',          label: '🧤 Portería a cero (POR)',    hasMinute: false },
+  { value: 'clean_sheet_def',         label: '🛡️ Portería a cero (DEF)',    hasMinute: false },
 ]
 
 function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
@@ -2090,13 +2176,15 @@ function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
   // Result entry — sincronizar con prop cuando cambia tras refresh
   const [homeG, setHomeG]       = useState(match.home_goals?.toString() ?? '')
   const [awayG, setAwayG]       = useState(match.away_goals?.toString() ?? '')
+  const [winnerTeam, setWinnerTeam] = useState<string>((match as any).winner_team_id ?? '')
   const [savingResult, setSavingResult] = useState(false)
   const [savedOk, setSavedOk]   = useState(false)
 
   useEffect(() => {
     setHomeG(match.home_goals?.toString() ?? '')
     setAwayG(match.away_goals?.toString() ?? '')
-  }, [match.home_goals, match.away_goals])
+    setWinnerTeam((match as any).winner_team_id ?? '')
+  }, [match.home_goals, match.away_goals, (match as any).winner_team_id])
 
   async function load() {
     const [sq1, sq2, evts] = await Promise.all([
@@ -2147,8 +2235,18 @@ function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
   async function saveResult() {
     const h = parseInt(homeG), a = parseInt(awayG)
     if (isNaN(h) || isNaN(a)) { alert('Resultado inválido'); return }
+    const isKnockout = match.match_type && match.match_type !== 'group'
+    const isDraw = h === a
+    // En eliminatorias con empate, el ganador es obligatorio
+    if (isKnockout && isDraw && !winnerTeam) {
+      alert('Es eliminatoria con empate — selecciona qué equipo avanzó (prórroga/penaltis)')
+      return
+    }
     setSavingResult(true)
     setSavedOk(false)
+    // Guardar winner_team_id si aplica
+    const winnerId = isKnockout ? (isDraw ? winnerTeam : (h > a ? match.home_team_id : match.away_team_id)) : null
+    await supabase.from('matches').update({ winner_team_id: winnerId ?? null }).eq('id', match.id)
     await onSetResult(match.id, h, a)
     setSavingResult(false)
     setSavedOk(true)
@@ -2206,6 +2304,20 @@ function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
                 {savingResult ? '…' : savedOk ? '✓ Guardado' : match.status === 'finished' ? 'Actualizar' : 'Finalizar'}
               </button>
             </div>
+            {/* Ganador en prórroga/penaltis — solo eliminatorias con empate */}
+            {match.match_type && match.match_type !== 'group' && homeG !== '' && awayG !== '' && parseInt(homeG) === parseInt(awayG) && (
+              <div className="mt-2">
+                <p className="text-xs text-[var(--text-secondary)] mb-1">Empate → ¿quién avanza? (prórroga/penaltis)</p>
+                <div className="flex gap-2">
+                  {[match.home_team, match.away_team].map(team => team && (
+                    <button key={team.id} onClick={() => setWinnerTeam(w => w === team.id ? '' : team.id)}
+                      className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm transition-colors ${winnerTeam === team.id ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-white' : 'border-[var(--border)] text-[var(--text-secondary)]'}`}>
+                      <span>{team.flag_emoji}</span><span className="truncate">{team.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Añadir evento */}
@@ -2254,7 +2366,7 @@ function PlayerEventsRow({ match, onRecalculate, onSetResult }: {
               {selType === 'goal' && minute && (
                 <p className="text-xs text-[var(--text-secondary)]">
                   {parseInt(minute) > 90
-                    ? '⏱ Prórroga → +0.5 pts'
+                    ? '⏱ Prórroga → goal_extra_time (+1 pt)'
                     : `⏱ Tiempo ordinario (min ${minute}) → +1 pt`}
                 </p>
               )}
@@ -2525,6 +2637,31 @@ function TeamBadge({ team, owner, right }: { team?: import('../../../types').Tea
 
 // ─── WILDCARD ─────────────────────────────────────────────────
 
+function WildcardParticipants({ matchId, leagueId, players }: {
+  matchId: string
+  leagueId: string
+  players: Player[]
+}) {
+  const [names, setNames] = useState<string[]>([])
+
+  useEffect(() => {
+    supabase.from('wildcard_entries').select('player_id')
+      .eq('match_id', matchId).eq('league_id', leagueId)
+      .then(({ data }) => {
+        if (!data?.length) return
+        setNames(data.map(e => players.find(p => p.id === e.player_id)?.name ?? '?'))
+      })
+  }, [matchId, leagueId, players])
+
+  if (!names.length) return null
+
+  return (
+    <p className="text-[11px] text-[var(--text-secondary)] mt-2">
+      🃏 Wildcard: <span className="text-white">{names.join(', ')}</span>
+    </p>
+  )
+}
+
 function WildcardButton({ match, leagueId, myId }: {
   match: Match
   leagueId: string
@@ -2533,40 +2670,87 @@ function WildcardButton({ match, leagueId, myId }: {
   const [entry, setEntry] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [entryCost, setEntryCost] = useState<number>(2)
+  const [cancelling, setCancelling] = useState(false)
 
-  useEffect(() => {
-    supabase.from('wildcard_entries')
-      .select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle()
-      .then(({ data }) => { setEntry(data); setLoaded(true) })
-  }, [match.id, myId])
-
-  if (!loaded) return null
-
-  // Bloquear 2h antes
   const locked = match.match_date
     ? new Date(match.match_date).getTime() - 2 * 60 * 60 * 1000 <= Date.now()
     : false
 
+  useEffect(() => {
+    Promise.all([
+      supabase.from('wildcard_entries').select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle(),
+      supabase.from('scores').select('player_id, points').eq('league_id', leagueId).order('points', { ascending: false }),
+    ]).then(([{ data: entryData }, { data: scoresData }]) => {
+      setEntry(entryData)
+      const sorted = scoresData ?? []
+      const rank = sorted.findIndex((s: any) => s.player_id === myId) + 1
+      setEntryCost(rank <= 2 ? 2 : rank <= 5 ? 1 : 0)
+      setLoaded(true)
+
+      // Si hay entrada sin coste y ya está bloqueado, disparar cobro T-2h
+      if (entryData && !entryData.cost_charged && locked) {
+        fetch('/api/wildcard/charge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leagueId, playerId: myId, matchId: match.id }),
+        }).catch(() => {})
+      }
+    })
+  }, [match.id, myId, leagueId, locked])
+
+  if (!loaded) return null
+
+  async function cancelWildcard() {
+    if (!confirm('¿Cancelar tu participación wildcard? No se te cobrará nada.')) return
+    setCancelling(true)
+    const res = await fetch('/api/wildcard/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leagueId, playerId: myId, matchId: match.id }),
+    })
+    if (res.ok) {
+      setEntry(null)
+    } else {
+      const { error } = await res.json()
+      alert(error ?? 'No se pudo cancelar')
+    }
+    setCancelling(false)
+  }
+
   if (entry) {
+    const costLabel = entry.cost_charged
+      ? (entryCost === 0 ? '' : ` · −${entryCost} pt${entryCost > 1 ? 's' : ''} cobrados`)
+      : ` · coste pendiente al cierre`
     return (
-      <p className="text-xs text-center text-[var(--accent)] mt-2">
-        ⚡ Wildcard activo — equipo elegido: {entry.qualifier_pick ? '✓' : '?'}
-      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <p className="text-xs text-[var(--accent)] flex-1">
+          ⚡ Wildcard activo{costLabel}
+        </p>
+        {!locked && (
+          <button onClick={cancelWildcard} disabled={cancelling}
+            className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
+            {cancelling ? '…' : '✕ Cancelar'}
+          </button>
+        )}
+      </div>
     )
   }
 
   if (locked) return null
+
+  const costLabel = entryCost === 0 ? 'Gratis' : `−${entryCost} pt${entryCost > 1 ? 's' : ''} al cierre`
 
   return (
     <>
       <button
         onClick={() => setShowModal(true)}
         className="w-full mt-2 py-2 rounded-xl border border-[var(--accent)]/50 text-[var(--accent)] text-sm font-semibold hover:bg-[var(--accent)]/10 transition-colors">
-        ⚡ Entrar por 2 pts
+        ⚡ Entrar ({costLabel})
       </button>
       {showModal && (
         <WildcardModal
-          match={match} leagueId={leagueId} myId={myId}
+          match={match} leagueId={leagueId} myId={myId} entryCost={entryCost}
           onClose={() => setShowModal(false)}
           onDone={(e) => { setEntry(e); setShowModal(false) }}
         />
@@ -2575,10 +2759,11 @@ function WildcardButton({ match, leagueId, myId }: {
   )
 }
 
-function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
+function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
   match: Match
   leagueId: string
   myId: string
+  entryCost: number
   onClose: () => void
   onDone: (entry: any) => void
 }) {
@@ -2652,7 +2837,11 @@ function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)] sticky top-0 bg-[var(--bg-surface)]">
-          <p className="font-black text-lg">⚡ Wildcard <span className="text-[var(--red)] text-sm font-normal">-2 pts</span></p>
+          <p className="font-black text-lg">⚡ Wildcard{' '}
+            <span className={`text-sm font-normal ${entryCost === 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
+              {entryCost === 0 ? 'Gratis' : `−${entryCost} pt${entryCost > 1 ? 's' : ''}`}
+            </span>
+          </p>
           <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
         </div>
         <div className="p-4 space-y-5">
@@ -2688,7 +2877,7 @@ function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
           {/* Jugadores */}
           <div>
             <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
-              3 jugadores <span className="text-[var(--text-muted)]">({selectedPlayers.length}/3) — goles ×0.5</span>
+              3 jugadores <span className="text-[var(--text-muted)]">({selectedPlayers.length}/3) — puntuación completa</span>
             </p>
             {[{ label: match.home_team?.name ?? '', players: homePlayers },
               { label: match.away_team?.name ?? '', players: awayPlayers }].map(group => (
@@ -2714,7 +2903,7 @@ function WildcardModal({ match, leagueId, myId, onClose, onDone }: {
 
           <button onClick={confirm} disabled={saving || !qualifierPick}
             className="w-full py-3 bg-[var(--accent)] text-white font-black rounded-xl disabled:opacity-40 transition-opacity">
-            {saving ? 'Guardando…' : '⚡ Confirmar (-2 pts)'}
+            {saving ? 'Guardando…' : entryCost === 0 ? '⚡ Confirmar (gratis)' : `⚡ Confirmar (−${entryCost} pt${entryCost > 1 ? 's' : ''} al cierre)`}
           </button>
         </div>
       </div>

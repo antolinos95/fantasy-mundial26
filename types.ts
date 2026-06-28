@@ -69,6 +69,7 @@ export interface Match {
   match_clock: string | null
   slot_home: string | null
   slot_away: string | null
+  winner_team_id: string | null
   home_team?: Team
   away_team?: Team
 }
@@ -115,6 +116,8 @@ export interface PlayerEvent {
   match_id: string
   squad_player_id: string
   event_type: 'goal' | 'goal_extra_time' | 'penalty_shootout' | 'red_card' | 'own_goal'
+    | 'assist' | 'clean_sheet_gk' | 'clean_sheet_def'
+    | 'penalty_missed' | 'penalty_missed_shootout'
   minute: number | null
   squad_player?: SquadPlayer
 }

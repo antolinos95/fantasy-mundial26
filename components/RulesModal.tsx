@@ -36,7 +36,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p>El autopick funciona aunque tengas la app cerrada — ideal si jugáis desde distintas zonas horarias.</p>
           </Faq>
 
-          <Faq q="⚽ ¿Cómo se puntúa?">
+          <Faq q="⚽ ¿Cómo se puntúa en fase de grupos?">
             <p className="font-semibold">Por resultado del partido:</p>
             <Bullet>✅ Victoria: +2 puntos al propietario del equipo ganador</Bullet>
             <Bullet>🤝 Empate: +1 punto a cada propietario. Si tienes <b>los dos equipos</b>, recibes +2 en total.</Bullet>
@@ -50,14 +50,32 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
 
             <p className="font-semibold mt-2">⭐ Jugadores destacados:</p>
             <Bullet>Eliges 3 jugadores de tu selección por partido.</Bullet>
-            <Bullet>⚽ Gol (reglamentario o prórroga) = +1</Bullet>
-            <Bullet>⚽ Penalti en tanda = +0,5</Bullet>
-            <Bullet>🟥 Expulsión = −1 · 🥅 Gol en propia = −1</Bullet>
+            <Bullet>⚽ Gol (reglamentario o prórroga) = +1 · ⚽ Penalti en tanda = +0,5</Bullet>
+            <Bullet>🟥 Expulsión = −1 · 🥅 Autogol = −1</Bullet>
 
             <p className="font-semibold mt-2">🏅 Bonificaciones por clasificación (acumulativas):</p>
             <Bullet>Octavos +1 · Cuartos +3 · Semifinales +5 · Final +8</Bullet>
             <Bullet>Campeón: +17 + los puntos que sume en la final</Bullet>
             <Bullet>Las bonificaciones se aplican <b>automáticamente</b> al terminar cada partido eliminatorio.</Bullet>
+          </Faq>
+
+          <Faq q="🏆 ¿Cómo se puntúa en eliminatorias?">
+            <p className="font-semibold">Por resultado (90' + tiempo añadido):</p>
+            <Bullet>✅ Victoria en tiempo reglamentario: +2 pts</Bullet>
+            <Bullet>🤝 Empate al acabar el tiempo: +1 pt a cada propietario</Bullet>
+            <Bullet>🏆 Equipo clasificado (pase como pase): +2 pts adicionales al propietario del que avanza</Bullet>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">Ejemplo: si tu equipo gana en prórroga, recibes +1 (empate en 90') + +2 (clasificado) = 3 pts por resultado.</p>
+
+            <p className="font-semibold mt-2">⭐ Jugadores destacados (puntuación completa):</p>
+            <Bullet>⚽ Gol (90' o prórroga) = +1 · ⚽ Penalti en tanda = +0,5</Bullet>
+            <Bullet>🎯 Asistencia = +0,5</Bullet>
+            <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1</Bullet>
+            <Bullet>❌ Penalti fallado (90'/prórroga) = −0,5 · ❌ Penalti fallado (tanda) = −0,25</Bullet>
+            <Bullet>🟥 Expulsión = −1 · 🥅 Autogol = −1</Bullet>
+
+            <p className="font-semibold mt-2">🎯 Porra en eliminatorias:</p>
+            <Bullet>Predices el marcador al acabar los 90' (sin contar prórroga ni penaltis).</Bullet>
+            <Bullet>Funciona igual que en grupos: +1 si aciertas y el rival no.</Bullet>
           </Faq>
 
           <Faq q="🤝 ¿Y si hay empate a puntos?">
@@ -98,19 +116,23 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
 
           {wildcardEnabled && (
             <Faq q="⚡ Modo Wildcard">
-              <p>Para que el juego siga siendo entretenido hasta el final y los jugadores cuyos equipos hayan sido eliminados puedan seguir participando, existe el Modo Wildcard.</p>
-              <p>En los partidos de eliminación directa, si no eres propietario de ninguno de los dos equipos que se enfrentan, puedes entrar como Wildcard.</p>
+              <p>Si no eres propietario de ninguno de los dos equipos de una eliminatoria, puedes entrar como Wildcard y seguir compitiendo.</p>
 
-              <Bullet><b>Coste de entrada:</b> 2 puntos de tu clasificación.</Bullet>
-              <Bullet><b>¿Quién pasa?</b> Elige el equipo que crees que se clasificará. Si aciertas, ganas <b>+2 puntos</b>.</Bullet>
-              <Bullet><b>Porra:</b> Predice el resultado exacto del partido. Si aciertas, ganas <b>+1 punto</b>.</Bullet>
+              <p className="font-semibold mt-2">💸 Coste de entrada (según tu posición en la tabla):</p>
+              <Bullet>🥇 1.º – 2.º puesto: <b>−2 puntos</b></Bullet>
+              <Bullet>🥉 3.º – 5.º puesto: <b>−1 punto</b></Bullet>
+              <Bullet>👥 6.º en adelante: <b>Gratis</b></Bullet>
 
-              <p className="font-semibold mt-1">Jugadores: Selecciona 3 jugadores. Los goles puntúan a la mitad de su valor habitual:</p>
-              <Bullet>Gol (reglamentario o prórroga): <b>0,5 puntos</b> (en lugar de 1).</Bullet>
-              <Bullet>Gol en tanda de penaltis: <b>0,25 puntos</b> (en lugar de 0,5).</Bullet>
-              <Bullet>Los autogoles y las tarjetas rojas mantienen su penalización habitual de <b>−1 punto</b>.</Bullet>
+              <p className="font-semibold mt-2">¿Qué eliges?</p>
+              <Bullet><b>🏆 ¿Quién pasa?</b> El equipo que crees que se clasifica. Si aciertas: <b>+2 pts</b>.</Bullet>
+              <Bullet><b>🎯 Porra:</b> Marcador exacto al acabar los 90'. Si aciertas: <b>+1 pt</b>.</Bullet>
 
-              <p className="mt-1">❌ Si no aciertas ninguna de tus predicciones, perderás los 2 puntos de entrada.</p>
+              <p className="font-semibold mt-2">⭐ 3 jugadores destacados (puntuación igual que los propietarios):</p>
+              <Bullet>⚽ Gol (90'/prórroga) = +1 · ⚽ Penalti tanda = +0,5</Bullet>
+              <Bullet>🎯 Asistencia = +0,5</Bullet>
+              <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1</Bullet>
+              <Bullet>❌ Penalti fallado (90'/prórroga) = −0,5 · ❌ Penalti fallado (tanda) = −0,25</Bullet>
+              <Bullet>🟥 Expulsión = −1 · 🥅 Autogol = −1</Bullet>
             </Faq>
           )}
         </div>
