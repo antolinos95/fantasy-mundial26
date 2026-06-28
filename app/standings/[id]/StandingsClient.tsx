@@ -837,12 +837,14 @@ function AllPredictionsReveal({ match, players, leagueId }: {
 
 // ─── RESUMEN DE PARTIDO FINALIZADO ───────────────────────────
 
-function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
+function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, players, leagueId }: {
   match: Match
   myId: string
   myTeamIds: string[]
   prediction?: Prediction
   ownerName: (teamId: string) => string | null
+  players: Player[]
+  leagueId: string
 }) {
   const [lineup, setLineup] = useState<{ team_id: string; squad_player: SquadPlayer }[]>([])
   const [events, setEvents] = useState<PlayerEvent[]>([])
@@ -941,6 +943,8 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName }: {
               })}
             </div>}
       </div>
+
+      <AllPredictionsReveal match={match} players={players} leagueId={leagueId} />
     </div>
   )
 }
@@ -1272,7 +1276,7 @@ function MatchesTab({
                 {finishedMy.map(m => (
                   <FinishedMatchCard key={m.id} match={m} myId={myId}
                     myTeamIds={myTeamIds} prediction={predictions.find(p => p.match_id === m.id)}
-                    ownerName={ownerName} />
+                    ownerName={ownerName} players={players} leagueId={leagueId} />
                 ))}
               </div>
         )}
