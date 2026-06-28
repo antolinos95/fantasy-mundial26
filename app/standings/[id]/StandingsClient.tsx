@@ -2648,15 +2648,17 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
       .then(({ data }) => setEvents(data ?? []))
   }, [matchId])
 
-  if (events.length === 0) return null
+  const VISIBLE_EVENTS = ['goal','goal_extra_time','penalty_shootout','own_goal','red_card','assist','penalty_missed','penalty_missed_shootout']
+  const visible = events.filter(e => VISIBLE_EVENTS.includes(e.event_type))
+  if (visible.length === 0) return null
 
   const EVENT_ICON: Record<string, string> = {
     goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
-    assist: '🎯', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️', penalty_missed: '❌', penalty_missed_shootout: '❌',
+    assist: '🎯', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
-  const home = events.filter(e => e.squad_player?.team_id === homeTeamId)
-  const away = events.filter(e => e.squad_player?.team_id !== homeTeamId)
+  const home = visible.filter(e => e.squad_player?.team_id === homeTeamId)
+  const away = visible.filter(e => e.squad_player?.team_id !== homeTeamId)
 
   return (
     <div className="border-t border-[var(--border)] pt-3 mb-3">
@@ -2722,18 +2724,17 @@ function LiveMatchEvents({ matchId, homeTeamId, isLive = false }: { matchId: str
     return () => { supabase.removeChannel(ch) }
   }, [matchId])
 
-  if (events.length === 0) return null
+  const VISIBLE_EVENTS = ['goal','goal_extra_time','penalty_shootout','own_goal','red_card','assist','penalty_missed','penalty_missed_shootout']
+  const visible = events.filter(e => VISIBLE_EVENTS.includes(e.event_type))
+  if (visible.length === 0) return null
 
   const EVENT_ICON: Record<string, string> = {
-    goal: '⚽',
-    goal_extra_time: '⚽',
-    penalty_shootout: '⚽',
-    own_goal: '🥅',
-    red_card: '🟥',
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
+    assist: '🎯', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
-  const home = events.filter(e => e.squad_player?.team_id === homeTeamId)
-  const away = events.filter(e => e.squad_player?.team_id !== homeTeamId)
+  const home = visible.filter(e => e.squad_player?.team_id === homeTeamId)
+  const away = visible.filter(e => e.squad_player?.team_id !== homeTeamId)
 
   return (
     <div className="mt-2 mb-1">
