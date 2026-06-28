@@ -370,11 +370,18 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
 
   useEffect(() => {
     supabase.from('score_log')
-      .select('category, points, detail, match_id, match:matches(home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
+      .select('category, points, detail, match_id, match:matches(match_date, home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
       .eq('league_id', leagueId).eq('player_id', player.id)
       .then(({ data, error }) => {
         if (error) console.error('score_log:', error.message)
-        setEntries((data as any[] ?? []).map(d => ({ ...d, points: Number(d.points) })))
+        const sorted = (data as any[] ?? [])
+          .map(d => ({ ...d, points: Number(d.points) }))
+          .sort((a, b) => {
+            const da = a.match?.match_date ?? ''
+            const db = b.match?.match_date ?? ''
+            return da < db ? -1 : da > db ? 1 : 0
+          })
+        setEntries(sorted)
         setLoading(false)
       })
   }, [leagueId, player.id])
