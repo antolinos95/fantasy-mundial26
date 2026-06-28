@@ -69,7 +69,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
             <p className="font-semibold mt-2">⭐ Jugadores destacados (puntuación completa):</p>
             <Bullet>⚽ Gol (90' o prórroga) = +1 · ⚽ Penalti en tanda = +0,5</Bullet>
             <Bullet>🎯 Asistencia = +0,5</Bullet>
-            <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1</Bullet>
+            <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1 <span className="text-[var(--text-secondary)]">(solo si no encajan en los 90')</span></Bullet>
             <Bullet>❌ Penalti fallado (90'/prórroga) = −0,5 · ❌ Penalti fallado (tanda) = −0,25</Bullet>
             <Bullet>🟥 Expulsión = −1 · 🥅 Autogol = −1</Bullet>
 
@@ -130,7 +130,7 @@ export default function RulesModal({ onClose, wildcardEnabled = false }: { onClo
               <p className="font-semibold mt-2">⭐ 3 jugadores destacados (puntuación igual que los propietarios):</p>
               <Bullet>⚽ Gol (90'/prórroga) = +1 · ⚽ Penalti tanda = +0,5</Bullet>
               <Bullet>🎯 Asistencia = +0,5</Bullet>
-              <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1</Bullet>
+              <Bullet>🧤 Portería a cero (Portero) = +2 · 🛡️ Portería a cero (Defensa) = +1 <span className="text-[var(--text-secondary)]">(solo si no encajan en los 90')</span></Bullet>
               <Bullet>❌ Penalti fallado (90'/prórroga) = −0,5 · ❌ Penalti fallado (tanda) = −0,25</Bullet>
               <Bullet>🟥 Expulsión = −1 · 🥅 Autogol = −1</Bullet>
             </Faq>
