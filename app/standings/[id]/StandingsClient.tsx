@@ -2974,7 +2974,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
 
       if (homeGoals !== '' && awayGoals !== '') {
         await supabase.from('predictions').upsert({
-          match_id: match.id, player_id: myId, league_id: leagueId,
+          match_id: match.id, player_id: myId,
           home_goals: parseInt(homeGoals), away_goals: parseInt(awayGoals),
           is_wildcard: true,
         }, { onConflict: 'match_id,player_id' })
