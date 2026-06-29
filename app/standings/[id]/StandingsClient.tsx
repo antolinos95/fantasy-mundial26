@@ -3023,13 +3023,17 @@ function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onCl
       if (selectedPlayers.length > 0) {
         await supabase.from('match_lineups').delete()
           .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true)
-        await supabase.from('match_lineups').insert(
+        const { error: luErr } = await supabase.from('match_lineups').insert(
           selectedPlayers.map(spId => ({
             match_id: match.id, player_id: myId,
             team_id: squadPlayers.find(s => s.id === spId)?.team_id,
             squad_player_id: spId, is_wildcard: true,
           }))
         )
+        if (luErr) { alert('Error guardando jugadores: ' + luErr.message); return }
+      } else {
+        alert('DEBUG: selectedPlayers vacío al confirmar')
+        return
       }
 
       sessionStorage.removeItem(ssKey)
