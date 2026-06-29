@@ -3025,7 +3025,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onCl
           .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true)
         await supabase.from('match_lineups').insert(
           selectedPlayers.map(spId => ({
-            match_id: match.id, player_id: myId, league_id: leagueId,
+            match_id: match.id, player_id: myId,
             team_id: squadPlayers.find(s => s.id === spId)?.team_id,
             squad_player_id: spId, is_wildcard: true,
           }))
