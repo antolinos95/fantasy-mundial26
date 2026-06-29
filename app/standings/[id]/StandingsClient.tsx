@@ -2064,25 +2064,24 @@ function PenaltiesSection({ leagueId, players }: { leagueId: string; players: Pl
     if (!targetId || !reason.trim() || !pts) return
     const p = parseInt(pts)
     if (isNaN(p) || p >= 0) { alert('Introduce un número negativo'); return }
-    const { error } = await supabase.from('score_log').insert({
-      league_id: leagueId, player_id: targetId, match_id: null,
-      category: 'bonus', points: p, detail: reason.trim(),
+    const res = await fetch('/api/admin/penalty', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leagueId, playerId: targetId, points: p, detail: reason.trim() }),
     })
-    if (error) { alert(error.message); return }
-    // recalculate scores for that player
-    const { data: sl } = await supabase.from('score_log').select('points').eq('league_id', leagueId).eq('player_id', targetId)
-    const total = (sl ?? []).reduce((s, r) => s + Number(r.points), 0)
-    await supabase.from('scores').upsert({ league_id: leagueId, player_id: targetId, points: total }, { onConflict: 'league_id,player_id' })
+    if (!res.ok) { const d = await res.json(); alert(d.error); return }
     setPts('-10'); setReason(''); setTargetId('')
     load()
   }
 
   async function remove(entry: { id: string; player_id: string; points: number }) {
     if (!confirm('¿Eliminar esta penalización?')) return
-    await supabase.from('score_log').delete().eq('id', entry.id)
-    const { data: sl } = await supabase.from('score_log').select('points').eq('league_id', leagueId).eq('player_id', entry.player_id)
-    const total = (sl ?? []).reduce((s, r) => s + Number(r.points), 0)
-    await supabase.from('scores').upsert({ league_id: leagueId, player_id: entry.player_id, points: total }, { onConflict: 'league_id,player_id' })
+    const res = await fetch('/api/admin/penalty', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: entry.id, leagueId, playerId: entry.player_id }),
+    })
+    if (!res.ok) { const d = await res.json(); alert(d.error); return }
     load()
   }
 
