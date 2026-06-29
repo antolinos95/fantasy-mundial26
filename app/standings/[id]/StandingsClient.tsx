@@ -1351,7 +1351,7 @@ function MatchesTab({
           !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
           <WildcardButton match={m} leagueId={leagueId} myId={myId} />
         )}
-        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && (
+        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && isRevealed(m) && (
           <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
         )}
         {isRevealed(m) && (
@@ -1476,7 +1476,7 @@ function MatchesTab({
                       !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? '') && (
                       <WildcardButton match={m} leagueId={leagueId} myId={myId} />
                     )}
-                    {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && (
+                    {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && isRevealed(m) && (
                       <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
                     )}
 
