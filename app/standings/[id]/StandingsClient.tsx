@@ -2099,7 +2099,7 @@ function PenaltiesSection({ leagueId, players }: { leagueId: string; players: Pl
             <select value={targetId} onChange={e => setTargetId(e.target.value)}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm">
               <option value="">— Selecciona jugador —</option>
-              {players.map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+              {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <div className="flex gap-2">
               <input type="number" value={pts} onChange={e => setPts(e.target.value)} placeholder="-10"
@@ -2122,7 +2122,7 @@ function PenaltiesSection({ leagueId, players }: { leagueId: string; players: Pl
                 return (
                   <div key={e.id} className="flex items-center justify-between gap-2 text-sm">
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium">{p?.display_name ?? '?'}</span>
+                      <span className="font-medium">{p?.name ?? '?'}</span>
                       <span className="text-[var(--text-secondary)] ml-2 text-xs truncate">{e.detail}</span>
                     </div>
                     <span className="text-red-400 font-bold shrink-0">{e.points} pts</span>
