@@ -44,7 +44,7 @@ BEGIN
   IF v_cost > 0 THEN
     INSERT INTO score_log(league_id, player_id, match_id, category, points, detail)
     VALUES(p_league_id, p_player_id, p_match_id, 'wildcard_entry', -v_cost,
-      CASE v_cost WHEN 2 THEN 'Entrada wildcard (−2 pts)' ELSE 'Entrada wildcard (−1 pt)' END);
+      'Wildcard: entrada');
     DELETE FROM scores WHERE league_id=p_league_id AND player_id=p_player_id;
     INSERT INTO scores(league_id, player_id, points)
     SELECT league_id, player_id, SUM(points)

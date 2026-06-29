@@ -2036,6 +2036,108 @@ function KnockoutBracket({ knockoutMatches, slotResolution, ownerMap }: {
   )
 }
 
+function PenaltiesSection({ leagueId, players }: { leagueId: string; players: Player[] }) {
+  const [open, setOpen] = useState(false)
+  const [entries, setEntries] = useState<{ id: string; player_id: string; points: number; detail: string }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [targetId, setTargetId] = useState('')
+  const [pts, setPts] = useState('-10')
+  const [reason, setReason] = useState('')
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('score_log')
+      .select('id, player_id, points, detail')
+      .eq('league_id', leagueId)
+      .eq('category', 'bonus')
+      .lt('points', 0)
+      .is('match_id', null)
+      .order('created_at', { ascending: false })
+    setEntries(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { if (open) load() }, [open])
+
+  async function add() {
+    if (!targetId || !reason.trim() || !pts) return
+    const p = parseInt(pts)
+    if (isNaN(p) || p >= 0) { alert('Introduce un número negativo'); return }
+    const { error } = await supabase.from('score_log').insert({
+      league_id: leagueId, player_id: targetId, match_id: null,
+      category: 'bonus', points: p, detail: reason.trim(),
+    })
+    if (error) { alert(error.message); return }
+    // recalculate scores for that player
+    const { data: sl } = await supabase.from('score_log').select('points').eq('league_id', leagueId).eq('player_id', targetId)
+    const total = (sl ?? []).reduce((s, r) => s + Number(r.points), 0)
+    await supabase.from('scores').upsert({ league_id: leagueId, player_id: targetId, points: total }, { onConflict: 'league_id,player_id' })
+    setPts('-10'); setReason(''); setTargetId('')
+    load()
+  }
+
+  async function remove(entry: { id: string; player_id: string; points: number }) {
+    if (!confirm('¿Eliminar esta penalización?')) return
+    await supabase.from('score_log').delete().eq('id', entry.id)
+    const { data: sl } = await supabase.from('score_log').select('points').eq('league_id', leagueId).eq('player_id', entry.player_id)
+    const total = (sl ?? []).reduce((s, r) => s + Number(r.points), 0)
+    await supabase.from('scores').upsert({ league_id: leagueId, player_id: entry.player_id, points: total }, { onConflict: 'league_id,player_id' })
+    load()
+  }
+
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
+      <button className="w-full flex items-center justify-between" onClick={() => setOpen(o => !o)}>
+        <p className="font-bold text-sm">🚨 Penalizaciones manuales</p>
+        <span className="text-[var(--text-secondary)] text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-4">
+          {/* Nueva penalización */}
+          <div className="space-y-2">
+            <select value={targetId} onChange={e => setTargetId(e.target.value)}
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm">
+              <option value="">— Selecciona jugador —</option>
+              {players.map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+            </select>
+            <div className="flex gap-2">
+              <input type="number" value={pts} onChange={e => setPts(e.target.value)} placeholder="-10"
+                className="w-24 bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm" />
+              <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="Motivo"
+                className="flex-1 bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <button onClick={add} disabled={!targetId || !reason.trim()}
+              className="w-full py-2 rounded-xl bg-red-700 text-white text-sm font-semibold disabled:opacity-40">
+              Añadir penalización
+            </button>
+          </div>
+          {/* Lista existente */}
+          {loading ? <p className="text-xs text-[var(--text-secondary)]">Cargando…</p> : entries.length === 0 ? (
+            <p className="text-xs text-[var(--text-secondary)]">Sin penalizaciones manuales</p>
+          ) : (
+            <div className="space-y-2">
+              {entries.map(e => {
+                const p = players.find(pl => pl.id === e.player_id)
+                return (
+                  <div key={e.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">{p?.display_name ?? '?'}</span>
+                      <span className="text-[var(--text-secondary)] ml-2 text-xs truncate">{e.detail}</span>
+                    </div>
+                    <span className="text-red-400 font-bold shrink-0">{e.points} pts</span>
+                    <button onClick={() => remove(e)} className="text-[var(--text-secondary)] hover:text-red-400 shrink-0 text-xs px-2">✕</button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AdminTab({ league, matches, players, router }: {
   league: League; matches: Match[]; players: Player[]; router: ReturnType<typeof useRouter>
 }) {
@@ -2102,6 +2204,9 @@ function AdminTab({ league, matches, players, router }: {
 
       {/* Anuncio a la liga */}
       <AnnouncementSection players={players} league={league} />
+
+      {/* Penalizaciones */}
+      <PenaltiesSection leagueId={league.id} players={players} />
 
       {/* Modo Wildcard */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
