@@ -192,7 +192,7 @@ export default function StandingsClient({
       </div>
 
       {tab === 'standings' && <StandingsTab scores={liveScores} players={players} myId={myId} leagueId={league.id} draftedTeams={draftedTeams} matches={liveMatches} />}
-      {tab === 'my-teams'  && <MyTeamsTab myId={myId} draftedTeams={draftedTeams} players={players} leagueId={league.id} />}
+      {tab === 'my-teams'  && <MyTeamsTab myId={myId} draftedTeams={draftedTeams} players={players} leagueId={league.id} matches={liveMatches} />}
       {tab === 'matches'   && (
         <MatchesTab
           matches={liveMatches} leagueId={league.id}
@@ -692,11 +692,42 @@ function TeamSquadExpand({ teamId, pickNumber, leagueId }: { teamId: string; pic
   )
 }
 
-function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
+function isEliminated(teamId: string, matches: Match[]): boolean {
+  // Perdió en eliminatorias
+  const koLost = matches.some(m => {
+    if (!m.match_type || m.match_type === 'group' || m.status !== 'finished') return false
+    if (m.home_team_id !== teamId && m.away_team_id !== teamId) return false
+    const winner = (m as any).winner_team_id ??
+      (m.home_goals != null && m.away_goals != null
+        ? m.home_goals > m.away_goals ? m.home_team_id
+        : m.away_goals > m.home_goals ? m.away_team_id
+        : null : null)
+    return winner !== null && winner !== teamId
+  })
+  if (koLost) return true
+
+  // No clasificó de grupos: 3 partidos de grupo terminados y ningún partido knockout
+  const groupDone = matches.filter(m =>
+    m.match_type === 'group' && m.status === 'finished' &&
+    (m.home_team_id === teamId || m.away_team_id === teamId)
+  ).length >= 3
+  if (groupDone) {
+    const hasKo = matches.some(m =>
+      m.match_type && m.match_type !== 'group' &&
+      (m.home_team_id === teamId || m.away_team_id === teamId)
+    )
+    if (!hasKo) return true
+  }
+
+  return false
+}
+
+function MyTeamsTab({ myId, draftedTeams, players, leagueId, matches }: {
   myId: string | null
   draftedTeams: DraftedTeam[]
   players: Player[]
   leagueId: string
+  matches: Match[]
 }) {
   const [viewingId, setViewingId] = useState<string | null>(null)
   const [expanded,  setExpanded]  = useState<string | null>(null)
@@ -773,34 +804,44 @@ function MyTeamsTab({ myId, draftedTeams, players, leagueId }: {
                     <div key={group}>
                       <p className="text-xs font-bold text-[var(--text-secondary)] mb-2">Grupo {group}</p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {teams.map(dt => (
+                        {teams.map(dt => {
+                          const elim = dt.team_id ? isEliminated(dt.team_id, matches) : false
+                          return (
                           <button key={dt.id}
                             onClick={() => setExpanded(e => e === dt.team_id ? null : dt.team_id)}
                             className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all
                               ${expanded === dt.team_id
                                 ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                                : elim
+                                ? 'border-[var(--border)] bg-[var(--bg-elevated)] opacity-35 grayscale'
                                 : 'border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50'}`}>
                             <span className="text-3xl leading-none">{dt.team?.flag_emoji}</span>
                             <span className="text-xs font-semibold leading-tight line-clamp-2 w-full text-center">{dt.team?.name}</span>
                           </button>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {currentTeams.map(dt => (
+                {currentTeams.map(dt => {
+                  const elim = dt.team_id ? isEliminated(dt.team_id, matches) : false
+                  return (
                   <button key={dt.id}
                     onClick={() => setExpanded(e => e === dt.team_id ? null : dt.team_id)}
                     className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all
                       ${expanded === dt.team_id
                         ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                        : elim
+                        ? 'border-[var(--border)] bg-[var(--bg-elevated)] opacity-35 grayscale'
                         : 'border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50'}`}>
                     <span className="text-3xl leading-none">{dt.team?.flag_emoji}</span>
                     <span className="text-xs font-semibold leading-tight line-clamp-2 w-full text-center">{dt.team?.name}</span>
                   </button>
-                ))}
+                  )
+                })}
               </div>
               )}
               {/* Panel expandible (ambos modos) */}
