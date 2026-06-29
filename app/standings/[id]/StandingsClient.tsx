@@ -2877,17 +2877,32 @@ function WildcardButton({ match, leagueId, myId, scores }: {
       ? (entryCost === 0 ? '' : ` · −${entryCost} pt${entryCost > 1 ? 's' : ''} cobrados`)
       : ` · coste pendiente al cierre`
     return (
-      <div className="mt-2 flex items-center gap-2">
-        <p className="text-xs text-[var(--accent)] flex-1">
-          ⚡ Wildcard activo{costLabel}
-        </p>
-        {!locked && (
-          <button onClick={cancelWildcard} disabled={cancelling}
-            className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
-            {cancelling ? '…' : '✕ Cancelar'}
-          </button>
+      <>
+        <div className="mt-2 flex items-center gap-2">
+          <p className="text-xs text-[var(--accent)] flex-1">
+            ⚡ Wildcard activo{costLabel}
+          </p>
+          {!locked && (
+            <>
+              <button onClick={() => setShowModal(true)}
+                className="text-xs text-[var(--accent)]/70 hover:text-[var(--accent)] transition-colors">
+                ✏️ Editar
+              </button>
+              <button onClick={cancelWildcard} disabled={cancelling}
+                className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
+                {cancelling ? '…' : '✕ Cancelar'}
+              </button>
+            </>
+          )}
+        </div>
+        {showModal && (
+          <WildcardModal
+            match={match} leagueId={leagueId} myId={myId} entryCost={entryCost}
+            onClose={() => setShowModal(false)}
+            onDone={(e) => { setEntry(e); setShowModal(false) }}
+          />
         )}
-      </div>
+      </>
     )
   }
 
@@ -2940,16 +2955,33 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
 
   useEffect(() => {
     if (!match.home_team_id || !match.away_team_id) return
-    supabase.from('squad_players').select('*')
-      .in('team_id', [match.home_team_id, match.away_team_id])
-      .then(({ data }) => {
-        const sorted = (data ?? []).sort((a: SquadPlayer, b: SquadPlayer) =>
-          (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9) ||
-          ((a.shirt_number ?? 99) - (b.shirt_number ?? 99))
-        )
-        setSquadPlayers(sorted)
-      })
-  }, [match.home_team_id, match.away_team_id])
+    Promise.all([
+      supabase.from('squad_players').select('*')
+        .in('team_id', [match.home_team_id, match.away_team_id]),
+      supabase.from('predictions').select('home_goals, away_goals')
+        .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true).maybeSingle(),
+      supabase.from('match_lineups').select('squad_player_id')
+        .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true),
+      supabase.from('wildcard_entries').select('qualifier_pick')
+        .eq('match_id', match.id).eq('player_id', myId).maybeSingle(),
+    ]).then(([{ data: spData }, { data: predData }, { data: luData }, { data: weData }]) => {
+      const sorted = (spData ?? []).sort((a: SquadPlayer, b: SquadPlayer) =>
+        (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9) ||
+        ((a.shirt_number ?? 99) - (b.shirt_number ?? 99))
+      )
+      setSquadPlayers(sorted)
+      // Precargar desde BD si no hay sessionStorage
+      const hasSaved = !!sessionStorage.getItem(ssKey)
+      if (!hasSaved) {
+        if (predData) {
+          setHomeGoals(String(predData.home_goals ?? ''))
+          setAwayGoals(String(predData.away_goals ?? ''))
+        }
+        if (luData?.length) setSelectedPlayers(luData.map((l: any) => l.squad_player_id))
+        if (weData?.qualifier_pick) setQualifierPick(weData.qualifier_pick)
+      }
+    })
+  }, [match.home_team_id, match.away_team_id, match.id, myId, ssKey])
 
   // Persistir selecciones en sessionStorage para sobrevivir recargas
   useEffect(() => {
