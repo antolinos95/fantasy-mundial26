@@ -2826,29 +2826,47 @@ function WildcardButton({ match, leagueId, myId, scores }: {
   const [showModal, setShowModal] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [preview, setPreview] = useState<{
+    qualifierName: string | null
+    pred: { home: number; away: number } | null
+    players: string[]
+  } | null>(null)
 
   const locked = match.match_date
     ? new Date(match.match_date).getTime() - 2 * 60 * 60 * 1000 <= Date.now()
     : false
 
-  // Coste dinámico basado en la clasificación actual (se recalcula cuando cambian los scores)
   const rank = scores.findIndex(s => s.player_id === myId) + 1
   const entryCost = rank <= 2 ? 2 : rank <= 5 ? 1 : 0
 
   useEffect(() => {
     supabase.from('wildcard_entries').select('*')
       .eq('match_id', match.id).eq('player_id', myId).maybeSingle()
-      .then(({ data: entryData }) => {
+      .then(async ({ data: entryData }) => {
         setEntry(entryData)
         setLoaded(true)
-
-        // Si hay entrada sin coste y ya está bloqueado, disparar cobro T-2h
         if (entryData && !entryData.cost_charged && locked) {
           fetch('/api/wildcard/charge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ leagueId, playerId: myId, matchId: match.id }),
           }).catch(() => {})
+        }
+        if (entryData) {
+          const [{ data: predData }, { data: luData }] = await Promise.all([
+            supabase.from('predictions').select('home_goals, away_goals')
+              .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true).maybeSingle(),
+            supabase.from('match_lineups').select('squad_player:squad_players(name)')
+              .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true),
+          ])
+          const qId = entryData.qualifier_pick
+          const qName = qId === match.home_team_id ? match.home_team?.name
+            : qId === match.away_team_id ? match.away_team?.name : null
+          setPreview({
+            qualifierName: qName ?? null,
+            pred: predData ? { home: predData.home_goals, away: predData.away_goals } : null,
+            players: (luData ?? []).map((l: any) => l.squad_player?.name).filter(Boolean),
+          })
         }
       })
   }, [match.id, myId, leagueId, locked])
@@ -2878,20 +2896,33 @@ function WildcardButton({ match, leagueId, myId, scores }: {
       : ` · coste pendiente al cierre`
     return (
       <>
-        <div className="mt-2 flex items-center gap-2">
-          <p className="text-xs text-[var(--accent)] flex-1">
-            ⚡ Wildcard activo{costLabel}
-          </p>
-          {!locked && (
+        <div className="mt-2 border border-[var(--accent)]/20 rounded-xl px-3 py-2 space-y-1">
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-[var(--accent)] flex-1 font-semibold">⚡ Wildcard{costLabel}</p>
+            {!locked && (
+              <>
+                <button onClick={() => setShowModal(true)}
+                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors">
+                  ✏️ Editar
+                </button>
+                <button onClick={cancelWildcard} disabled={cancelling}
+                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
+                  {cancelling ? '…' : '✕'}
+                </button>
+              </>
+            )}
+          </div>
+          {preview && (
             <>
-              <button onClick={() => setShowModal(true)}
-                className="text-xs text-[var(--accent)]/70 hover:text-[var(--accent)] transition-colors">
-                ✏️ Editar
-              </button>
-              <button onClick={cancelWildcard} disabled={cancelling}
-                className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
-                {cancelling ? '…' : '✕ Cancelar'}
-              </button>
+              {preview.qualifierName && (
+                <p className="text-xs text-[var(--text-secondary)]">🏆 <span className="text-white">{preview.qualifierName}</span></p>
+              )}
+              {preview.pred && (
+                <p className="text-xs text-[var(--text-secondary)]">🎯 <span className="text-white font-semibold">{preview.pred.home} - {preview.pred.away}</span></p>
+              )}
+              {preview.players.length > 0 && (
+                <p className="text-xs text-[var(--text-secondary)]">⭐ <span className="text-white">{preview.players.join(', ')}</span></p>
+              )}
             </>
           )}
         </div>
@@ -2899,7 +2930,25 @@ function WildcardButton({ match, leagueId, myId, scores }: {
           <WildcardModal
             match={match} leagueId={leagueId} myId={myId} entryCost={entryCost} editing
             onClose={() => setShowModal(false)}
-            onDone={(e) => { setEntry(e); setShowModal(false) }}
+            onDone={async (e) => {
+              setEntry(e)
+              setShowModal(false)
+              // Recargar preview tras editar
+              const [{ data: predData }, { data: luData }] = await Promise.all([
+                supabase.from('predictions').select('home_goals, away_goals')
+                  .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true).maybeSingle(),
+                supabase.from('match_lineups').select('squad_player:squad_players(name)')
+                  .eq('match_id', match.id).eq('player_id', myId).eq('is_wildcard', true),
+              ])
+              const qId = e?.qualifier_pick
+              const qName = qId === match.home_team_id ? match.home_team?.name
+                : qId === match.away_team_id ? match.away_team?.name : null
+              setPreview({
+                qualifierName: qName ?? null,
+                pred: predData ? { home: predData.home_goals, away: predData.away_goals } : null,
+                players: (luData ?? []).map((l: any) => l.squad_player?.name).filter(Boolean),
+              })
+            }}
           />
         )}
       </>
