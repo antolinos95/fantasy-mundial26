@@ -2897,7 +2897,7 @@ function WildcardButton({ match, leagueId, myId, scores }: {
         </div>
         {showModal && (
           <WildcardModal
-            match={match} leagueId={leagueId} myId={myId} entryCost={entryCost}
+            match={match} leagueId={leagueId} myId={myId} entryCost={entryCost} editing
             onClose={() => setShowModal(false)}
             onDone={(e) => { setEntry(e); setShowModal(false) }}
           />
@@ -2931,11 +2931,12 @@ function WildcardButton({ match, leagueId, myId, scores }: {
 const POS_ORDER: Record<string, number> = { GK: 0, DF: 1, MF: 2, FW: 3 }
 const POS_LABEL: Record<string, string> = { GK: 'PT', DF: 'DF', MF: 'MC', FW: 'DL' }
 
-function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
+function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onClose, onDone }: {
   match: Match
   leagueId: string
   myId: string
   entryCost: number
+  editing?: boolean
   onClose: () => void
   onDone: (entry: any) => void
 }) {
@@ -2998,11 +2999,18 @@ function WildcardModal({ match, leagueId, myId, entryCost, onClose, onDone }: {
     if (!qualifierPick) { alert('Elige qué equipo pasa'); return }
     setSaving(true)
     try {
-      const { error: entryErr } = await supabase.rpc('enter_wildcard', {
-        p_league_id: leagueId, p_player_id: myId,
-        p_match_id: match.id, p_qualifier_pick: qualifierPick,
-      })
-      if (entryErr) { alert(entryErr.message); return }
+      if (!editing) {
+        const { error: entryErr } = await supabase.rpc('enter_wildcard', {
+          p_league_id: leagueId, p_player_id: myId,
+          p_match_id: match.id, p_qualifier_pick: qualifierPick,
+        })
+        if (entryErr) { alert(entryErr.message); return }
+      } else {
+        // Actualizar qualifier_pick si cambió
+        await supabase.from('wildcard_entries')
+          .update({ qualifier_pick: qualifierPick })
+          .eq('match_id', match.id).eq('player_id', myId)
+      }
 
       if (homeGoals !== '' && awayGoals !== '') {
         await supabase.from('predictions').upsert({
