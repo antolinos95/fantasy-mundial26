@@ -199,6 +199,7 @@ export default function StandingsClient({
           myId={myId} draftedTeams={draftedTeams}
           updatedAt={matchesUpdatedAt}
           league={league} players={players}
+          scores={liveScores}
         />
       )}
       {tab === 'mundial' && <MundialTab matches={liveMatches} draftedTeams={draftedTeams} players={players} />}
@@ -1098,7 +1099,7 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
 // ─── PARTIDOS + LINEUP ────────────────────────────────────────
 
 function MatchesTab({
-  matches, leagueId, myId, draftedTeams, updatedAt, league, players,
+  matches, leagueId, myId, draftedTeams, updatedAt, league, players, scores,
 }: {
   matches: Match[]
   leagueId: string
@@ -1107,6 +1108,7 @@ function MatchesTab({
   updatedAt: Date | null
   league: League
   players: Player[]
+  scores: Score[]
 }) {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [localGoals, setLocalGoals]   = useState<Record<string, string>>({})
@@ -1361,7 +1363,7 @@ function MatchesTab({
         {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
           m.home_team_id && m.away_team_id &&
           !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
-          <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+          <WildcardButton match={m} leagueId={leagueId} myId={myId} scores={scores} />
         )}
         {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && isRevealed(m) && (
           <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
@@ -1486,7 +1488,7 @@ function MatchesTab({
                     {/* Wildcard */}
                     {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
                       !myTeamIds.includes(m.home_team_id ?? '') && !myTeamIds.includes(m.away_team_id ?? '') && (
-                      <WildcardButton match={m} leagueId={leagueId} myId={myId} />
+                      <WildcardButton match={m} leagueId={leagueId} myId={myId} scores={scores} />
                     )}
                     {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && isRevealed(m) && (
                       <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
@@ -2814,41 +2816,41 @@ function WildcardParticipants({ matchId, leagueId, players }: {
   )
 }
 
-function WildcardButton({ match, leagueId, myId }: {
+function WildcardButton({ match, leagueId, myId, scores }: {
   match: Match
   leagueId: string
   myId: string
+  scores: { player_id: string; points: number }[]
 }) {
   const [entry, setEntry] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [entryCost, setEntryCost] = useState<number>(2)
   const [cancelling, setCancelling] = useState(false)
 
   const locked = match.match_date
     ? new Date(match.match_date).getTime() - 2 * 60 * 60 * 1000 <= Date.now()
     : false
 
-  useEffect(() => {
-    Promise.all([
-      supabase.from('wildcard_entries').select('*').eq('match_id', match.id).eq('player_id', myId).maybeSingle(),
-      supabase.from('scores').select('player_id, points').eq('league_id', leagueId).order('points', { ascending: false }),
-    ]).then(([{ data: entryData }, { data: scoresData }]) => {
-      setEntry(entryData)
-      const sorted = scoresData ?? []
-      const rank = sorted.findIndex((s: any) => s.player_id === myId) + 1
-      setEntryCost(rank <= 2 ? 2 : rank <= 5 ? 1 : 0)
-      setLoaded(true)
+  // Coste dinámico basado en la clasificación actual (se recalcula cuando cambian los scores)
+  const rank = scores.findIndex(s => s.player_id === myId) + 1
+  const entryCost = rank <= 2 ? 2 : rank <= 5 ? 1 : 0
 
-      // Si hay entrada sin coste y ya está bloqueado, disparar cobro T-2h
-      if (entryData && !entryData.cost_charged && locked) {
-        fetch('/api/wildcard/charge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ leagueId, playerId: myId, matchId: match.id }),
-        }).catch(() => {})
-      }
-    })
+  useEffect(() => {
+    supabase.from('wildcard_entries').select('*')
+      .eq('match_id', match.id).eq('player_id', myId).maybeSingle()
+      .then(({ data: entryData }) => {
+        setEntry(entryData)
+        setLoaded(true)
+
+        // Si hay entrada sin coste y ya está bloqueado, disparar cobro T-2h
+        if (entryData && !entryData.cost_charged && locked) {
+          fetch('/api/wildcard/charge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leagueId, playerId: myId, matchId: match.id }),
+          }).catch(() => {})
+        }
+      })
   }, [match.id, myId, leagueId, locked])
 
   if (!loaded) return null
