@@ -88,14 +88,25 @@ export default function StandingsClient({
     return () => { supabase.removeChannel(scoresCh); supabase.removeChannel(matchesCh) }
   }, [league.id])
 
-  // Fallback polling every 30s cuando hay partido en juego (status live en BD O tiempo transcurrido < 130 min)
+  // Partido activo: live en BD o dentro de la ventana de 210 min desde el kick-off
   const hasLiveMatch = liveMatches.some(m => {
     if (m.status === 'finished') return false
     if (m.status === 'live') return true
     if (!m.match_date) return false
     const elapsed = (Date.now() - new Date(m.match_date).getTime()) / 60000
-    return elapsed >= 0 && elapsed <= 130
+    return elapsed >= 0 && elapsed <= 210
   })
+
+  // ¿Hay algún partido que empiece en los próximos 30 min?
+  const matchSoonMs = liveMatches
+    .filter(m => m.status !== 'finished' && m.match_date)
+    .reduce((min, m) => {
+      const diff = new Date(m.match_date!).getTime() - Date.now()
+      return diff > 0 && diff < min ? diff : min
+    }, Infinity)
+  const hasSoonMatch = matchSoonMs < 30 * 60 * 1000
+
+  // Fallback polling 30s solo durante partidos activos
   useEffect(() => {
     if (!hasLiveMatch) return
     async function fetchMatches() {
@@ -108,11 +119,12 @@ export default function StandingsClient({
     return () => clearInterval(t)
   }, [hasLiveMatch, league.id])
 
-  // Tick cada 30s para re-evaluar hasLiveMatch y arrancar el polling cuando empieza un partido
+  // Tick: 30s si hay partido activo o próximo, 5min si no
   useEffect(() => {
-    const t = setInterval(() => setTick(n => n + 1), 30000)
+    const interval = (hasLiveMatch || hasSoonMatch) ? 30000 : 5 * 60 * 1000
+    const t = setInterval(() => setTick(n => n + 1), interval)
     return () => clearInterval(t)
-  }, [])
+  }, [hasLiveMatch, hasSoonMatch])
 
   const [unreadAvisos, setUnreadAvisos] = useState(0)
 
