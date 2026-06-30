@@ -22,7 +22,7 @@ const REVEAL_BEFORE_MS = 1 * 60 * 60 * 1000   // porras y jugadores visibles 1h 
 const EVENT_LABELS: Record<string, string> = {
   goal: '⚽ Gol (reglamentario)',
   goal_extra_time: '⚽ Gol (prórroga)',
-  penalty_shootout: '⚽ Penalti (tanda)',
+  penalty_shootout: '🥅 Penalti (tanda)',
   red_card: '🟥 Expulsión',
   own_goal: '🥅 Autogol',
 }
@@ -405,7 +405,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
     penalty_missed_shootout: -0.25, own_goal: -1, red_card: -1,
   }
   const EVENT_ICON_BD: Record<string, string> = {
-    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', assist: '👟',
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '🥅', assist: '👟',
     clean_sheet_gk: '🧤', clean_sheet_def: '🛡️', penalty_missed: '❌',
     penalty_missed_shootout: '❌', own_goal: '🥅', red_card: '🟥',
   }
@@ -2436,7 +2436,7 @@ function classifyGoal(minute: number | null): 'goal' | 'goal_extra_time' {
 }
 
 const EVENT_ICON: Record<string, string> = {
-  goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽',
+  goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '🥅',
   red_card: '🟥', own_goal: '🥅',
   assist: '👟', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️',
   penalty_missed: '❌', penalty_missed_shootout: '❌',
@@ -2450,7 +2450,7 @@ const ADD_EVENT_OPTIONS: { value: AddEventType; label: string; hasMinute: boolea
   { value: 'assist',                  label: '👟 Asistencia',               hasMinute: true  },
   { value: 'own_goal',                label: '🥅 Autogol',                  hasMinute: true  },
   { value: 'red_card',                label: '🟥 Expulsión',                hasMinute: true  },
-  { value: 'penalty_shootout',        label: '⚽ Penalti (tanda)',          hasMinute: false },
+  { value: 'penalty_shootout',        label: '🥅 Penalti (tanda)',          hasMinute: false },
   { value: 'penalty_missed',          label: '❌ Penalti fallado (90\')',   hasMinute: true  },
   { value: 'penalty_missed_shootout', label: '❌ Penalti fallado (tanda)',  hasMinute: false },
   { value: 'clean_sheet_gk',          label: '🧤 Portería a cero (POR)',    hasMinute: false },
@@ -2812,7 +2812,7 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
   if (visible.length === 0) return null
 
   const EVENT_ICON: Record<string, string> = {
-    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '🥅', own_goal: '🥅', red_card: '🟥',
     assist: '👟', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
@@ -2888,7 +2888,7 @@ function LiveMatchEvents({ matchId, homeTeamId, isLive = false }: { matchId: str
   if (visible.length === 0) return null
 
   const EVENT_ICON: Record<string, string> = {
-    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '🥅', own_goal: '🥅', red_card: '🟥',
     assist: '👟', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
