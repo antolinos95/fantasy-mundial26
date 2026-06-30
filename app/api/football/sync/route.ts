@@ -282,6 +282,8 @@ export async function GET(req: NextRequest) {
 
       if (isFinished) {
         await syncCleanSheets(ourMatch.id, homeId, awayId, espnHomeId, espnAwayId, comp.details ?? [])
+        const assistCount = await syncAssists(ourMatch.id, ev.id, homeId, awayId)
+        if (assistCount > 0) log.push(`✓ Assists sincronizadas: ${assistCount}`)
         await supabaseAdmin.rpc('recalculate_scores', { p_match_id: ourMatch.id })
         log.push(`✓ Scores recalculated: ${homeEs} vs ${awayEs}`)
       }
@@ -302,9 +304,9 @@ async function syncESPNEvents(
   espnAwayId: string,
   isFinished: boolean,
 ): Promise<number> {
-  // Filtrar solo goles y tarjetas rojas
+  // Goles (incluyendo tanda), autogoles y tarjetas rojas
   const relevant = details.filter(d =>
-    (d.scoringPlay && !d.shootout) || d.ownGoal || d.redCard
+    d.scoringPlay || d.ownGoal || d.redCard
   )
   if (relevant.length === 0) return 0
 
@@ -368,8 +370,10 @@ async function syncESPNEvents(
       eventType = 'own_goal'
     } else if (d.redCard) {
       eventType = 'red_card'
+    } else if (d.shootout && d.scoringPlay) {
+      eventType = 'penalty_shootout'
     } else if (d.scoringPlay && d.penaltyKick) {
-      eventType = 'goal' // penalti en juego (no tanda)
+      eventType = 'goal' // penalti en juego normal
     } else if (d.scoringPlay && (minute ?? 0) > 90) {
       eventType = 'goal_extra_time'
     } else {
@@ -447,6 +451,59 @@ async function syncCleanSheets(
     if (newOnes.length > 0) {
       await supabaseAdmin.from('player_events').insert(newOnes)
     }
+  }
+}
+
+async function syncAssists(
+  matchId: string,
+  espnEventId: string,
+  homeTeamId: string,
+  awayTeamId: string,
+): Promise<number> {
+  try {
+    const res = await fetch(`${ESPN_BASE}/summary?event=${espnEventId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
+    })
+    if (!res.ok) return 0
+    const data = await res.json()
+    const rosters: any[] = data.rosters ?? []
+
+    const { data: squadPlayers } = await supabaseAdmin
+      .from('squad_players')
+      .select('id, name, team_id')
+      .in('team_id', [homeTeamId, awayTeamId])
+    if (!squadPlayers?.length) return 0
+
+    // Borrar asistencias previas del partido para reinsertar limpio
+    await supabaseAdmin.from('player_events').delete()
+      .eq('match_id', matchId).eq('event_type', 'assist')
+
+    const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: null; notified: boolean }[] = []
+
+    for (const team of rosters) {
+      for (const p of team.roster ?? []) {
+        const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
+        if (assists <= 0) continue
+        const playerName: string = p.athlete?.displayName ?? ''
+        const norm = normalize(playerName)
+        const sp = squadPlayers.find(sq => {
+          const n = normalize(sq.name)
+          return n === norm || n.includes(norm) || norm.includes(n) ||
+            n.split(' ').at(-1) === norm.split(' ').at(-1)
+        })
+        if (!sp) continue
+        for (let i = 0; i < assists; i++) {
+          toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
+        }
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await supabaseAdmin.from('player_events').insert(toInsert)
+    }
+    return toInsert.length
+  } catch {
+    return 0
   }
 }
 
