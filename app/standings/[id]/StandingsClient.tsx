@@ -565,7 +565,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                           </span>
                           {isPlayerCat && <span className="text-[var(--text-secondary)] text-xs">{isOpen ? '▲' : '▼'}</span>}
                         </div>
-                        {isOpen && breakdowns[bdKey] && (
+                        {isPlayerCat && isOpen && breakdowns[bdKey] && (
                           <div className="ml-3 mt-1 space-y-0.5">
                             {breakdowns[bdKey].map((row, i) => (
                               <div key={i} className="flex items-center gap-2 bg-[var(--bg-surface)] rounded-lg px-3 py-1">
