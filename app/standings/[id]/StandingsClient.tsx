@@ -405,7 +405,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
     penalty_missed_shootout: -0.25, own_goal: -1, red_card: -1,
   }
   const EVENT_ICON_BD: Record<string, string> = {
-    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', assist: '🎯',
+    goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', assist: '👟',
     clean_sheet_gk: '🧤', clean_sheet_def: '🛡️', penalty_missed: '❌',
     penalty_missed_shootout: '❌', own_goal: '🥅', red_card: '🟥',
   }
@@ -2438,7 +2438,7 @@ function classifyGoal(minute: number | null): 'goal' | 'goal_extra_time' {
 const EVENT_ICON: Record<string, string> = {
   goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽',
   red_card: '🟥', own_goal: '🥅',
-  assist: '🎯', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️',
+  assist: '👟', clean_sheet_gk: '🧤', clean_sheet_def: '🛡️',
   penalty_missed: '❌', penalty_missed_shootout: '❌',
 }
 
@@ -2447,7 +2447,7 @@ type AddEventType = 'goal' | 'own_goal' | 'penalty_shootout' | 'red_card'
   | 'penalty_missed' | 'penalty_missed_shootout'
 const ADD_EVENT_OPTIONS: { value: AddEventType; label: string; hasMinute: boolean }[] = [
   { value: 'goal',                    label: '⚽ Gol',                      hasMinute: true  },
-  { value: 'assist',                  label: '🎯 Asistencia',               hasMinute: true  },
+  { value: 'assist',                  label: '👟 Asistencia',               hasMinute: true  },
   { value: 'own_goal',                label: '🥅 Autogol',                  hasMinute: true  },
   { value: 'red_card',                label: '🟥 Expulsión',                hasMinute: true  },
   { value: 'penalty_shootout',        label: '⚽ Penalti (tanda)',          hasMinute: false },
@@ -2813,7 +2813,7 @@ function FinishedMatchEvents({ matchId, homeTeamId }: { matchId: string; homeTea
 
   const EVENT_ICON: Record<string, string> = {
     goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
-    assist: '🎯', penalty_missed: '❌', penalty_missed_shootout: '❌',
+    assist: '👟', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
   const home = visible.filter(e => e.squad_player?.team_id === homeTeamId)
@@ -2889,7 +2889,7 @@ function LiveMatchEvents({ matchId, homeTeamId, isLive = false }: { matchId: str
 
   const EVENT_ICON: Record<string, string> = {
     goal: '⚽', goal_extra_time: '⚽', penalty_shootout: '⚽', own_goal: '🥅', red_card: '🟥',
-    assist: '🎯', penalty_missed: '❌', penalty_missed_shootout: '❌',
+    assist: '👟', penalty_missed: '❌', penalty_missed_shootout: '❌',
   }
 
   const home = visible.filter(e => e.squad_player?.team_id === homeTeamId)
