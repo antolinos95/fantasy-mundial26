@@ -304,9 +304,9 @@ async function syncESPNEvents(
   espnAwayId: string,
   isFinished: boolean,
 ): Promise<number> {
-  // Goles (incluyendo tanda), autogoles y tarjetas rojas
+  // Goles (sin tanda — la tanda se sincroniza desde el summary con fallos incluidos), autogoles y tarjetas rojas
   const relevant = details.filter(d =>
-    d.scoringPlay || d.ownGoal || d.redCard
+    (d.scoringPlay || d.ownGoal || d.redCard) && !d.shootout
   )
   if (relevant.length === 0) return 0
 
@@ -454,6 +454,15 @@ async function syncCleanSheets(
   }
 }
 
+function resolvePlayerFromSquad(name: string, squad: { id: string; name: string; team_id: string }[]) {
+  const norm = normalize(name)
+  return squad.find(sq => {
+    const n = normalize(sq.name)
+    return n === norm || n.includes(norm) || norm.includes(n) ||
+      n.split(' ').at(-1) === norm.split(' ').at(-1)
+  })
+}
+
 async function syncAssists(
   matchId: string,
   espnEventId: string,
@@ -466,35 +475,41 @@ async function syncAssists(
     })
     if (!res.ok) return 0
     const data = await res.json()
-    const rosters: any[] = data.rosters ?? []
 
     const { data: squadPlayers } = await supabaseAdmin
       .from('squad_players')
       .select('id, name, team_id')
       .in('team_id', [homeTeamId, awayTeamId])
     if (!squadPlayers?.length) return 0
+    const squad = squadPlayers
 
-    // Borrar asistencias previas del partido para reinsertar limpio
+    // Borrar asistencias y penaltis de tanda previos para reinsertar limpio
     await supabaseAdmin.from('player_events').delete()
-      .eq('match_id', matchId).eq('event_type', 'assist')
+      .eq('match_id', matchId)
+      .in('event_type', ['assist', 'penalty_shootout', 'penalty_missed_shootout'])
 
     const toInsert: { match_id: string; squad_player_id: string; event_type: string; minute: null; notified: boolean }[] = []
 
-    for (const team of rosters) {
+    // Asistencias desde roster stats
+    for (const team of data.rosters ?? []) {
       for (const p of team.roster ?? []) {
         const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
         if (assists <= 0) continue
-        const playerName: string = p.athlete?.displayName ?? ''
-        const norm = normalize(playerName)
-        const sp = squadPlayers.find(sq => {
-          const n = normalize(sq.name)
-          return n === norm || n.includes(norm) || norm.includes(n) ||
-            n.split(' ').at(-1) === norm.split(' ').at(-1)
-        })
+        const sp = resolvePlayerFromSquad(p.athlete?.displayName ?? '', squad)
         if (!sp) continue
         for (let i = 0; i < assists; i++) {
           toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
         }
+      }
+    }
+
+    // Tanda de penaltis desde la sección shootout
+    for (const teamShootout of data.shootout ?? []) {
+      for (const shot of teamShootout.shots ?? []) {
+        const sp = resolvePlayerFromSquad(shot.player ?? '', squad)
+        if (!sp) continue
+        const eventType = shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout'
+        toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
       }
     }
 

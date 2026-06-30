@@ -137,7 +137,8 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const relevant = details.filter(d => d.scoringPlay || d.ownGoal || d.redCard)
+    // Excluir tanda (se sincroniza desde el summary con fallos incluidos)
+    const relevant = details.filter(d => (d.scoringPlay || d.ownGoal || d.redCard) && !d.shootout)
     const toInsert: any[] = []
 
     for (const d of relevant) {
@@ -166,35 +167,50 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('player_events').insert(toInsert)
     }
 
-    // Sincronizar asistencias desde el summary de ESPN
+    // Sincronizar asistencias y tanda de penaltis desde el summary de ESPN
     try {
       const summRes = await fetch(`${ESPN_BASE}/summary?event=${espnEv.id}`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
       })
       if (summRes.ok) {
         const summData = await summRes.json()
-        const rosters: any[] = summData.rosters ?? []
-        const assistInserts: any[] = []
-        for (const team of rosters) {
+        const summInserts: any[] = []
+
+        function resolveSquad(name: string) {
+          const norm = normalize(name)
+          return squad.find(sq => {
+            const n = normalize(sq.name)
+            return n === norm || n.includes(norm) || norm.includes(n) ||
+              n.split(' ').at(-1) === norm.split(' ').at(-1)
+          })
+        }
+
+        // Asistencias desde roster stats
+        for (const team of summData.rosters ?? []) {
           for (const p of team.roster ?? []) {
             const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
             if (assists <= 0) continue
-            const name: string = p.athlete?.displayName ?? ''
-            const norm = normalize(name)
-            const sp = squad.find(sq => {
-              const n = normalize(sq.name)
-              return n === norm || n.includes(norm) || norm.includes(n) ||
-                n.split(' ').at(-1) === norm.split(' ').at(-1)
-            })
+            const sp = resolveSquad(p.athlete?.displayName ?? '')
             if (!sp) continue
             for (let i = 0; i < assists; i++) {
-              assistInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
+              summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
             }
           }
         }
-        if (assistInserts.length > 0) {
-          await supabaseAdmin.from('player_events').insert(assistInserts)
-          log.push(`✓ ${assistInserts.length} asistencias: ${homeEs} vs ${awayEs}`)
+
+        // Tanda de penaltis
+        for (const teamShootout of summData.shootout ?? []) {
+          for (const shot of teamShootout.shots ?? []) {
+            const sp = resolveSquad(shot.player ?? '')
+            if (!sp) continue
+            const eventType = shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout'
+            summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
+          }
+        }
+
+        if (summInserts.length > 0) {
+          await supabaseAdmin.from('player_events').insert(summInserts)
+          log.push(`✓ ${summInserts.length} eventos de summary (asistencias/tanda): ${homeEs} vs ${awayEs}`)
         }
       }
     } catch { /* ignore */ }
