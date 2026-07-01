@@ -1483,7 +1483,6 @@ function MatchesTab({
     const awayOwner = ownerName(m.away_team_id ?? '')
     const state = matchLiveState(m)
     const [open, setOpen] = useState(false)
-    const [myWcEntry, setMyWcEntry] = useState<boolean | null>(null) // null=no cargado
 
     const isKoMatch = league.wildcard_enabled && m.match_type && m.match_type !== 'group'
     const isEligibleWc = isKoMatch && myId &&
@@ -1491,18 +1490,8 @@ function MatchesTab({
       !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id)
 
     function toggle() {
-      setOpen(o => {
-        if (!o && myWcEntry === null && isEligibleWc) {
-          supabase.from('wildcard_entries').select('id').eq('match_id', m.id)
-            .eq('league_id', leagueId).eq('player_id', myId!)
-            .then(({ data }) => setMyWcEntry((data?.length ?? 0) > 0))
-        }
-        return !o
-      })
+      setOpen(o => !o)
     }
-
-    // Distintivo para partidos pendientes con wildcard disponible
-    const missingWc = isEligibleWc && m.status !== 'finished' && myWcEntry === false
 
     return (
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl overflow-hidden">
@@ -1543,27 +1532,22 @@ function MatchesTab({
             </div>
             <span className="text-lg">{m.away_team?.flag_emoji}</span>
           </div>
-          {/* Fila de distintivos + flecha */}
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="flex gap-1">
-              {missingWc && <span className="text-[10px] bg-[var(--yellow)]/20 text-[var(--yellow)] border border-[var(--yellow)]/40 px-1.5 py-0.5 rounded-full font-medium">Sin wildcard</span>}
-              {isEligibleWc && m.status === 'finished' && myWcEntry !== null && (
-                myWcEntry
-                  ? <span className="text-[10px] bg-green-900/30 text-[var(--green)] border border-[var(--green)]/40 px-1.5 py-0.5 rounded-full font-medium">🃏 Wildcard</span>
-                  : <span className="text-[10px] bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border)] px-1.5 py-0.5 rounded-full">Sin wildcard</span>
-              )}
-            </div>
+          <div className="flex items-center justify-end mt-1.5">
             <span className="text-xs text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
           </div>
         </button>
+
+        {/* Wildcard siempre visible (fuera del toggle) */}
+        {isEligibleWc && m.status !== 'finished' && (
+          <div className="px-4 pb-3 border-t border-[var(--border)]">
+            <WildcardButton match={m} leagueId={leagueId} myId={myId!} scores={scores} />
+          </div>
+        )}
 
         {open && (
           <div className="border-t border-[var(--border)] px-4 pb-3 pt-2">
             {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
               <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={state === 'live' || state === 'halftime'} />
-            )}
-            {isEligibleWc && m.status !== 'finished' && (
-              <WildcardButton match={m} leagueId={leagueId} myId={myId!} scores={scores} />
             )}
             {isKoMatch && isRevealed(m) && (
               <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
