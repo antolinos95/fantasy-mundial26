@@ -1105,22 +1105,31 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
   players: Player[]
   leagueId: string
 }) {
+  const [open, setOpen] = useState(false)
   const [lineup, setLineup] = useState<{ team_id: string; squad_player: SquadPlayer }[]>([])
   const [events, setEvents] = useState<PlayerEvent[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => {
-    Promise.all([
-      supabase.from('match_lineups')
-        .select('team_id, squad_player:squad_players(*)')
-        .eq('match_id', match.id).eq('player_id', myId),
-      supabase.from('player_events').select('*').eq('match_id', match.id),
-    ]).then(([lu, ev]) => {
-      setLineup((lu.data as any[]) ?? [])
-      setEvents((ev.data as PlayerEvent[]) ?? [])
-      setLoading(false)
+  function toggle() {
+    setOpen(o => {
+      if (!o && !loaded) {
+        setLoading(true)
+        Promise.all([
+          supabase.from('match_lineups')
+            .select('team_id, squad_player:squad_players(*)')
+            .eq('match_id', match.id).eq('player_id', myId),
+          supabase.from('player_events').select('*').eq('match_id', match.id),
+        ]).then(([lu, ev]) => {
+          setLineup((lu.data as any[]) ?? [])
+          setEvents((ev.data as PlayerEvent[]) ?? [])
+          setLoading(false)
+          setLoaded(true)
+        })
+      }
+      return !o
     })
-  }, [match.id, myId])
+  }
 
   const predExact = !!prediction &&
     prediction.home_goals === match.home_goals &&
@@ -1140,70 +1149,80 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
   }
 
   return (
-    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
-      {/* Cabecera */}
-      <div className="flex items-center justify-between mb-2">
-        <TeamBadge team={match.home_team} owner={ownerName(match.home_team_id ?? '')} />
-        <span className="font-black text-xl tabular-nums">{match.home_goals} - {match.away_goals}</span>
-        <TeamBadge team={match.away_team} owner={ownerName(match.away_team_id ?? '')} right />
-      </div>
-      {match.match_date && (
-        <p className="text-xs text-center text-[var(--text-secondary)] mb-3">
-          {new Date(match.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)}
-        </p>
+    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+      {/* Cabecera siempre visible — clic para expandir */}
+      <button onClick={toggle} className="w-full p-4 text-left">
+        <div className="flex items-center justify-between mb-1">
+          <TeamBadge team={match.home_team} owner={ownerName(match.home_team_id ?? '')} />
+          <span className="font-black text-xl tabular-nums">{match.home_goals} - {match.away_goals}</span>
+          <TeamBadge team={match.away_team} owner={ownerName(match.away_team_id ?? '')} right />
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          {match.match_date
+            ? <p className="text-xs text-[var(--text-secondary)]">
+                {new Date(match.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)}
+              </p>
+            : <span />}
+          <span className="text-xs text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {/* Detalle: porra, eventos, jugadores */}
+      {open && (
+        <div className="border-t border-[var(--border)] px-4 pb-4 pt-3 space-y-3">
+          {/* Resumen porra */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">🎯 Tu porra</p>
+            {prediction
+              ? <p className="text-sm">
+                  Predijiste <span className="font-bold">{prediction.home_goals}-{prediction.away_goals}</span>{' '}
+                  {predExact
+                    ? <span className="text-[var(--green)] font-bold">✓ Acertada</span>
+                    : <span className="text-[var(--red)]">✗ Fallada</span>}
+                </p>
+              : <p className="text-sm text-[var(--text-secondary)]">No enviaste porra</p>}
+          </div>
+
+          {/* Eventos del partido */}
+          <FinishedMatchEvents matchId={match.id} homeTeamId={match.home_team_id} />
+
+          {/* Resumen jugadores */}
+          <div className="border-t border-[var(--border)] pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">⭐ Tus jugadores</p>
+            {loading
+              ? <p className="text-xs text-[var(--text-secondary)]">Cargando…</p>
+              : lineup.length === 0
+              ? <p className="text-xs text-[var(--text-secondary)]">No elegiste jugadores</p>
+              : <div className="space-y-1.5">
+                  {lineup.map((l, i) => {
+                    const sp  = l.squad_player
+                    const pts = playerPts(sp.id)
+                    const evs = events.filter(e => e.squad_player_id === sp.id)
+                    const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout', 'assist', 'clean_sheet_gk', 'clean_sheet_def'].includes(e.event_type))
+                    const hasBad  = evs.some(e => ['own_goal', 'red_card', 'penalty_missed', 'penalty_missed_shootout'].includes(e.event_type))
+                    const rowCls  = hasBad ? 'bg-red-900/30 border border-[var(--red)]' : hasGoal ? 'bg-green-900/30 border border-[var(--green)]' : 'bg-[var(--bg-elevated)]'
+                    return (
+                      <div key={i} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${rowCls}`}>
+                        <img src={sp.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-7 h-7 rounded-full object-cover shrink-0"
+                          onError={e => { (e.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
+                        <span className="flex-1 text-sm truncate">{sp.name}</span>
+                        <span className="flex gap-0.5 text-xs shrink-0">
+                          {evs.map((e, j) => <span key={j}>{EVENT_ICON[e.event_type]}</span>)}
+                        </span>
+                        {pts !== 0 && (
+                          <span className={`text-xs font-bold shrink-0 ${pts < 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
+                            {pts > 0 ? '+' : ''}{fmtPts(pts)}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>}
+          </div>
+
+          <AllPredictionsReveal match={match} players={players} leagueId={leagueId} />
+        </div>
       )}
-
-      {/* Resumen porra */}
-      <div className="border-t border-[var(--border)] pt-3 mb-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">🎯 Tu porra</p>
-        {prediction
-          ? <p className="text-sm">
-              Predijiste <span className="font-bold">{prediction.home_goals}-{prediction.away_goals}</span>{' '}
-              {predExact
-                ? <span className="text-[var(--green)] font-bold">✓ Acertada</span>
-                : <span className="text-[var(--red)]">✗ Fallada</span>}
-            </p>
-          : <p className="text-sm text-[var(--text-secondary)]">No enviaste porra</p>}
-      </div>
-
-      {/* Eventos del partido */}
-      <FinishedMatchEvents matchId={match.id} homeTeamId={match.home_team_id} />
-
-      {/* Resumen jugadores */}
-      <div className="border-t border-[var(--border)] pt-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">⭐ Tus jugadores</p>
-        {loading
-          ? <p className="text-xs text-[var(--text-secondary)]">Cargando…</p>
-          : lineup.length === 0
-          ? <p className="text-xs text-[var(--text-secondary)]">No elegiste jugadores</p>
-          : <div className="space-y-1.5">
-              {lineup.map((l, i) => {
-                const sp  = l.squad_player
-                const pts = playerPts(sp.id)
-                const evs = events.filter(e => e.squad_player_id === sp.id)
-                const hasGoal = evs.some(e => ['goal', 'goal_extra_time', 'penalty_shootout', 'assist', 'clean_sheet_gk', 'clean_sheet_def'].includes(e.event_type))
-                const hasBad  = evs.some(e => ['own_goal', 'red_card', 'penalty_missed', 'penalty_missed_shootout'].includes(e.event_type))
-                const rowCls  = hasBad ? 'bg-red-900/30 border border-[var(--red)]' : hasGoal ? 'bg-green-900/30 border border-[var(--green)]' : 'bg-[var(--bg-elevated)]'
-                return (
-                  <div key={i} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${rowCls}`}>
-                    <img src={sp.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-7 h-7 rounded-full object-cover shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
-                    <span className="flex-1 text-sm truncate">{sp.name}</span>
-                    <span className="flex gap-0.5 text-xs shrink-0">
-                      {evs.map((e, j) => <span key={j}>{EVENT_ICON[e.event_type]}</span>)}
-                    </span>
-                    {pts !== 0 && (
-                      <span className={`text-xs font-bold shrink-0 ${pts < 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
-                        {pts > 0 ? '+' : ''}{fmtPts(pts)}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>}
-      </div>
-
-      <AllPredictionsReveal match={match} players={players} leagueId={leagueId} />
     </div>
   )
 }
