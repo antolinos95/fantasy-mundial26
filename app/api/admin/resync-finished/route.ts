@@ -185,15 +185,35 @@ export async function POST(req: NextRequest) {
           })
         }
 
-        // Asistencias desde roster stats
+        // Asistencias y portería a cero desde roster stats
+        // Borrar porterías a cero previas para reinsertar solo el starter
+        await supabaseAdmin.from('player_events').delete()
+          .eq('match_id', ourMatch.id).in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
+
+        const goals90 = details.filter((d: any) => d.scoringPlay && !d.shootout && (parseMinute(d.clock?.displayValue ?? '') || 0) <= 90)
+        const homeScored90 = goals90.filter((d: any) => d.team?.id === espnHomeId).length
+        const awayScored90 = goals90.filter((d: any) => d.team?.id === espnAwayId).length
+
         for (const team of summData.rosters ?? []) {
           for (const p of team.roster ?? []) {
             const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
-            if (assists <= 0) continue
-            const sp = resolveSquad(p.athlete?.displayName ?? '')
-            if (!sp) continue
-            for (let i = 0; i < assists; i++) {
-              summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
+            if (assists > 0) {
+              const sp = resolveSquad(p.athlete?.displayName ?? '')
+              if (!sp) continue
+              for (let i = 0; i < assists; i++) {
+                summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
+              }
+            }
+            // Portería a cero: solo portero starter
+            const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
+            const played = p.starter === true || (p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? 0) > 0
+            if (isGk && played) {
+              const isHome = team.team?.id === espnHomeId
+              const conceded = isHome ? awayScored90 : homeScored90
+              if (conceded === 0) {
+                const sp = resolveSquad(p.athlete?.displayName ?? '')
+                if (sp) summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: 'clean_sheet_gk', minute: null, notified: true })
+              }
             }
           }
         }

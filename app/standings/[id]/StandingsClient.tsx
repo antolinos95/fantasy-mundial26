@@ -1592,6 +1592,13 @@ function MatchesTab({
                 const isOpen = !!openMatches[m.id]
                 const toggleMatch = () => setOpenMatches(o => ({ ...o, [m.id]: !o[m.id] }))
                 const state = matchLiveState(m)
+                // Distintivo: partido editable sin porra o sin jugadores elegidos
+                const missingPred = able && !myPred
+                const missingLineup = able && [...myHomeTeams, ...myAwayTeams].some(teamId => {
+                  const key = `${m.id}-${teamId}`
+                  return (lineups[key] ?? []).length === 0
+                })
+                const incomplete = missingPred || missingLineup
                 return (
                   <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
                     {/* Cabecera partido — siempre visible */}
@@ -1630,7 +1637,15 @@ function MatchesTab({
                               {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
                             </p>
                           : <span />}
-                        <span className="text-xs text-[var(--text-secondary)]">{isOpen ? '▲' : '▼'}</span>
+                        <div className="flex items-center gap-1.5">
+                          {incomplete && (
+                            <span className="flex gap-1">
+                              {missingPred && <span className="text-[10px] bg-[var(--yellow)]/20 text-[var(--yellow)] border border-[var(--yellow)]/40 px-1.5 py-0.5 rounded-full font-medium">Sin porra</span>}
+                              {missingLineup && <span className="text-[10px] bg-[var(--yellow)]/20 text-[var(--yellow)] border border-[var(--yellow)]/40 px-1.5 py-0.5 rounded-full font-medium">Sin jugadores</span>}
+                            </span>
+                          )}
+                          <span className="text-xs text-[var(--text-secondary)]">{isOpen ? '▲' : '▼'}</span>
+                        </div>
                       </div>
                     </button>
 

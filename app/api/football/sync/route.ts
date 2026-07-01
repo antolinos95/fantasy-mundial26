@@ -281,7 +281,7 @@ export async function GET(req: NextRequest) {
       }
 
       if (isFinished) {
-        await syncCleanSheets(ourMatch.id, homeId, awayId, espnHomeId, espnAwayId, comp.details ?? [])
+        await syncCleanSheets(ourMatch.id, homeId, awayId, espnHomeId, espnAwayId, comp.details ?? [], ev.id)
         const { count: assistCount, winnerTeamId } = await syncAssists(ourMatch.id, ev.id, homeId, awayId, espnHomeId, espnAwayId)
         if (assistCount > 0) log.push(`✓ Summary eventos: ${assistCount}`)
         if (winnerTeamId && (ourMatch as any).winner_team_id !== winnerTeamId) {
@@ -412,50 +412,51 @@ async function syncCleanSheets(
   espnHomeId: string,
   espnAwayId: string,
   details: any[],
+  espnEventId: string,
 ): Promise<void> {
-  // Calcular goles en los 90' reglamentarios por equipo (excluir tanda y minuto > 90)
   const goals90 = details.filter(d => d.scoringPlay && !d.shootout && (parseMinute(d.clock?.displayValue ?? '') || 0) <= 90)
-
-  // Goles que benefician a cada equipo en 90' (incluye autogoles que van al marcador contrario)
   const homeScored90 = goals90.filter(d => d.team?.id === espnHomeId).length
   const awayScored90 = goals90.filter(d => d.team?.id === espnAwayId).length
 
-  const cleanSheetTeams: { teamId: string }[] = []
-  if (awayScored90 === 0) cleanSheetTeams.push({ teamId: homeTeamId }) // home kept clean sheet
-  if (homeScored90 === 0) cleanSheetTeams.push({ teamId: awayTeamId }) // away kept clean sheet
+  if (homeScored90 > 0 && awayScored90 > 0) return // ningún equipo tiene portería a cero
 
-  if (cleanSheetTeams.length === 0) return
+  // Obtener roster para saber qué portero jugó
+  const summRes = await fetch(`${ESPN_BASE}/summary?event=${espnEventId}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
+  })
+  if (!summRes.ok) return
+  const summData = await summRes.json()
 
-  for (const { teamId } of cleanSheetTeams) {
-    const { data: players } = await supabaseAdmin
-      .from('squad_players')
-      .select('id, position')
-      .eq('team_id', teamId)
-      .in('position', ['GK', 'DF'])
+  const { data: squadPlayers } = await supabaseAdmin
+    .from('squad_players').select('id, name, team_id')
+    .in('team_id', [homeTeamId, awayTeamId])
+  const squad = squadPlayers ?? []
 
-    if (!players?.length) continue
+  // Borrar porterías previas y reinsertar solo el starter
+  await supabaseAdmin.from('player_events').delete()
+    .eq('match_id', matchId).in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
 
-    const toInsert = players.map(p => ({
-      match_id: matchId,
-      squad_player_id: p.id,
-      event_type: p.position === 'GK' ? 'clean_sheet_gk' : 'clean_sheet_def',
-      minute: null,
-      notified: true,
-    }))
-
-    // Evitar duplicados (por si se llama más de una vez)
-    const { data: existing } = await supabaseAdmin
-      .from('player_events')
-      .select('squad_player_id')
-      .eq('match_id', matchId)
-      .in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
-
-    const existingIds = new Set((existing ?? []).map(e => e.squad_player_id))
-    const newOnes = toInsert.filter(e => !existingIds.has(e.squad_player_id))
-    if (newOnes.length > 0) {
-      await supabaseAdmin.from('player_events').insert(newOnes)
+  const toInsert: any[] = []
+  for (const team of summData.rosters ?? []) {
+    for (const p of team.roster ?? []) {
+      const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
+      const played = p.starter === true || (p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? 0) > 0
+      if (!isGk || !played) continue
+      const isHome = team.team?.id === espnHomeId
+      const conceded = isHome ? awayScored90 : homeScored90
+      if (conceded > 0) continue
+      const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+      const name = p.athlete?.displayName ?? ''
+      const normName = norm(name)
+      const sp = squad.find(sq => {
+        const n = norm(sq.name)
+        return n === normName || n.includes(normName) || normName.includes(n) ||
+          n.split(' ').at(-1) === normName.split(' ').at(-1)
+      })
+      if (sp) toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: 'clean_sheet_gk', minute: null, notified: true })
     }
   }
+  if (toInsert.length > 0) await supabaseAdmin.from('player_events').insert(toInsert)
 }
 
 function resolvePlayerFromSquad(name: string, squad: { id: string; name: string; team_id: string }[]) {
