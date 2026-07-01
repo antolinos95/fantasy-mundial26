@@ -1742,7 +1742,7 @@ interface GroupRow {
 
 function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draftedTeams: DraftedTeam[]; players: Player[] }) {
   const [allTeams, setAllTeams] = useState<import('../../../types').Team[]>([])
-  const [view, setView] = useState<'groups' | 'knockout'>('groups')
+  const [view, setView] = useState<'groups' | 'knockout'>('knockout')
 
   const ownerMap = useMemo(() => {
     const m: Record<string, string> = {}
