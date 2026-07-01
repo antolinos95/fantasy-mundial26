@@ -440,7 +440,7 @@ interface LogEntry {
   points: number
   detail: string | null
   match_id: string | null
-  match?: { home_team?: { name: string; flag_emoji: string }; away_team?: { name: string; flag_emoji: string } } | null
+  match?: { match_type?: string; home_team_id?: string; away_team_id?: string; home_team?: { name: string; flag_emoji: string }; away_team?: { name: string; flag_emoji: string } } | null
 }
 
 const CAT_INFO: Record<string, { label: string; icon: string }> = {
@@ -466,23 +466,30 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [breakdowns, setBreakdowns] = useState<Record<string, PlayerEventRow[]>>({})
+  const [myTeamIds, setMyTeamIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    supabase.from('score_log')
-      .select('category, points, detail, match_id, match:matches(match_date, home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
-      .eq('league_id', leagueId).eq('player_id', player.id)
-      .then(({ data, error }) => {
-        if (error) console.error('score_log:', error.message)
-        const sorted = (data as any[] ?? [])
-          .map(d => ({ ...d, points: Number(d.points) }))
-          .sort((a, b) => {
-            const da = a.match?.match_date ?? ''
-            const db = b.match?.match_date ?? ''
-            return da < db ? -1 : da > db ? 1 : 0
-          })
-        setEntries(sorted)
-        setLoading(false)
-      })
+    Promise.all([
+      supabase.from('score_log')
+        .select('category, points, detail, match_id, match:matches(match_date, match_type, home_team_id, away_team_id, home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
+        .eq('league_id', leagueId).eq('player_id', player.id)
+        .then(r => r),
+      supabase.from('drafted_teams').select('team_id')
+        .eq('player_id', player.id).eq('league_id', leagueId)
+        .then(r => r),
+    ]).then(([{ data, error }, { data: dt }]) => {
+      if (error) console.error('score_log:', error.message)
+      const sorted = (data as any[] ?? [])
+        .map(d => ({ ...d, points: Number(d.points) }))
+        .sort((a, b) => {
+          const da = a.match?.match_date ?? ''
+          const db = b.match?.match_date ?? ''
+          return da < db ? -1 : da > db ? 1 : 0
+        })
+      setEntries(sorted)
+      setMyTeamIds(new Set((dt ?? []).map((d: any) => d.team_id)))
+      setLoading(false)
+    })
   }, [leagueId, player.id])
 
   const EVENT_PTS: Record<string, number> = {
@@ -610,7 +617,11 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                 <div className="space-y-1">
                   {items.map(({ e, wc, extra }: any, idx: number) => {
                     const m = e.match
-                    const noMatchLabel = wc || e.category === 'bonus'
+                    const NEXT_STAGE: Record<string, string> = { r32: 'Dieciseisavos', r16: 'Cuartos', qf: 'Semifinales', sf: 'Final', final: 'Campeón' }
+                    const classifiedTeam = e.category === 'classified' && m
+                      ? (myTeamIds.has(m.home_team_id) ? m.home_team : m.away_team)
+                      : null
+                    const noMatchLabel = wc || e.category === 'bonus' || e.category === 'classified'
                     const matchLabel = m
                       ? `${m.home_team?.flag_emoji ?? ''} ${m.home_team?.name ?? ''} - ${m.away_team?.name ?? ''} ${m.away_team?.flag_emoji ?? ''}`.trim()
                       : ''
@@ -630,8 +641,12 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                         </div>
                       )
                     }
+                    const classifiedLabel = classifiedTeam
+                      ? `${classifiedTeam.flag_emoji ?? ''} ${classifiedTeam.name} → ${NEXT_STAGE[m?.match_type ?? ''] ?? 'Siguiente ronda'}`.trim()
+                      : (e.detail ?? '')
                     const label2 = (wc && (e.category === 'wildcard_prediction' || e.category === 'wildcard_player'))
                       ? `Wildcard: ${matchLabel}`
+                      : e.category === 'classified' ? classifiedLabel
                       : noMatchLabel ? (e.detail ?? '') : matchLabel || (e.detail ?? '')
                     const isPlayerCat = e.category === 'player' || e.category === 'wildcard_player'
                     const bdKey = `${e.match_id}-${wc}`
