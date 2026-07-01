@@ -119,59 +119,65 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Asistencias desde summary ──
+    // ── Summary: asistencias + porteros titulares ──
     const summRes = await fetch(`${ESPN_BASE}/summary?event=${espnEv.id}`, {
       headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
     })
-    const assistInserts: any[] = []
-    if (summRes.ok) {
-      const summData = await summRes.json()
-      // Borrar asistencias previas de este partido para no duplicar
-      await supabaseAdmin.from('player_events').delete()
-        .eq('match_id', m.id).eq('event_type', 'assist')
+    if (!summRes.ok) { log.push(`⚠ No summary: ${homeEs} vs ${awayEs}`); processed++; continue }
+    const summData = await summRes.json()
 
-      for (const team of summData.rosters ?? []) {
-        for (const p of team.roster ?? []) {
-          const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
-          if (assists <= 0) continue
+    // Borrar asistencias y porterías previas
+    await supabaseAdmin.from('player_events').delete()
+      .eq('match_id', m.id).eq('event_type', 'assist')
+    await supabaseAdmin.from('player_events').delete()
+      .eq('match_id', m.id).in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
+
+    const toInsert: any[] = []
+
+    // Asistencias y porteros que jugaron desde rosters
+    const playedGkNames: { name: string; espnTeamId: string }[] = []
+    for (const team of summData.rosters ?? []) {
+      for (const p of team.roster ?? []) {
+        // Asistencias
+        const assists: number = p.stats?.find((s: any) => s.name === 'goalAssists')?.value ?? 0
+        if (assists > 0) {
           const sp = resolvePlayer(p.athlete?.displayName ?? '')
           if (!sp) { log.push(`⚠ No player: ${p.athlete?.displayName} (${homeEs} vs ${awayEs})`); continue }
           for (let i = 0; i < assists; i++) {
-            assistInserts.push({ match_id: m.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
+            toInsert.push({ match_id: m.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
           }
         }
-      }
-      if (assistInserts.length > 0) {
-        await supabaseAdmin.from('player_events').insert(assistInserts)
-        log.push(`✓ ${assistInserts.length} asistencias: ${homeEs} vs ${awayEs}`)
+        // Portero que jugó (position === 'G' en ESPN, o starter con GK en nuestra BD)
+        if (p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G') {
+          playedGkNames.push({ name: p.athlete?.displayName ?? '', espnTeamId: team.team?.id ?? '' })
+        }
       }
     }
 
-    // ── Porterías a cero (solo porteros) ──
+    // Porterías a cero: solo al portero que jugó
     const goals90 = details.filter(d =>
       d.scoringPlay && !d.shootout && (parseMinute(d.clock?.displayValue ?? '') || 0) <= 90
     )
     const homeScored90 = goals90.filter(d => d.team?.id === espnHomeId).length
     const awayScored90 = goals90.filter(d => d.team?.id === espnAwayId).length
 
-    // Borrar porterías a cero previas de este partido
-    await supabaseAdmin.from('player_events').delete()
-      .eq('match_id', m.id).in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
-
-    const csInserts: any[] = []
-    const csTeams: string[] = []
-    if (awayScored90 === 0) csTeams.push(m.home_team_id)
-    if (homeScored90 === 0) csTeams.push(m.away_team_id)
-
-    for (const teamId of csTeams) {
-      const gks = squad.filter(p => p.team_id === teamId && p.position === 'GK')
-      for (const gk of gks) {
-        csInserts.push({ match_id: m.id, squad_player_id: gk.id, event_type: 'clean_sheet_gk', minute: null, notified: true })
-      }
+    for (const { name, espnTeamId } of playedGkNames) {
+      const isHome = espnTeamId === espnHomeId
+      const conceded = isHome ? awayScored90 : homeScored90
+      if (conceded > 0) continue // no portería a cero
+      const sp = resolvePlayer(name)
+      if (!sp) { log.push(`⚠ GK no encontrado: ${name} (${homeEs} vs ${awayEs})`); continue }
+      toInsert.push({ match_id: m.id, squad_player_id: sp.id, event_type: 'clean_sheet_gk', minute: null, notified: true })
     }
-    if (csInserts.length > 0) {
-      await supabaseAdmin.from('player_events').insert(csInserts)
-      log.push(`✓ ${csInserts.length} porterías a cero: ${homeEs} vs ${awayEs}`)
+
+    if (toInsert.length > 0) {
+      await supabaseAdmin.from('player_events').insert(toInsert)
+      const nAssists = toInsert.filter(e => e.event_type === 'assist').length
+      const nCs = toInsert.filter(e => e.event_type === 'clean_sheet_gk').length
+      const parts = []
+      if (nAssists > 0) parts.push(`${nAssists} asistencias`)
+      if (nCs > 0) parts.push(`${nCs} portería a cero`)
+      log.push(`✓ ${parts.join(', ')}: ${homeEs} vs ${awayEs}`)
     }
 
     processed++
