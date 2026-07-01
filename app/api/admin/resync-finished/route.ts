@@ -206,7 +206,8 @@ export async function POST(req: NextRequest) {
             }
             // Portería a cero: solo portero starter
             const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
-            const played = p.starter === true || (p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? 0) > 0
+            const minutes = p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? null
+            const played = minutes !== null ? minutes > 60 : p.starter === true
             if (isGk && played) {
               const isHome = team.team?.id === espnHomeId
               const conceded = isHome ? awayScored90 : homeScored90

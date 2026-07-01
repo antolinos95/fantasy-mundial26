@@ -149,7 +149,8 @@ export async function POST(req: NextRequest) {
         }
         // Portero que jugó: starter o con minutos jugados
         const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
-        const played = p.starter === true || (p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? 0) > 0
+        const minutes = p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? null
+        const played = minutes !== null ? minutes > 60 : p.starter === true
         if (isGk && played) {
           playedGkNames.push({ name: p.athlete?.displayName ?? '', espnTeamId: team.team?.id ?? '' })
         }
