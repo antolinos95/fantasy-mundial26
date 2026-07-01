@@ -1431,6 +1431,7 @@ function MatchesTab({
   const [visibleOther, setVisibleOther]       = useState(5)
   const [visibleOtherDone, setVisibleOtherDone] = useState(5)
   const [myView, setMyView]             = useState<'pending' | 'finished'>('pending')
+  const [openMatches, setOpenMatches]   = useState<Record<string, boolean>>({})
   const [, setTick] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 30000) // rerender cada 30s
@@ -1588,47 +1589,58 @@ function MatchesTab({
                 const able   = canInteract(m)
                 const myHomeTeams = myTeamIds.filter(id => id === m.home_team_id)
                 const myAwayTeams = myTeamIds.filter(id => id === m.away_team_id)
+                const isOpen = !!openMatches[m.id]
+                const toggleMatch = () => setOpenMatches(o => ({ ...o, [m.id]: !o[m.id] }))
+                const state = matchLiveState(m)
                 return (
-                  <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
-                    {/* Cabecera partido */}
-                    <div className="flex items-center justify-between mb-2">
-                      <TeamBadge team={m.home_team} owner={ownerName(m.home_team_id ?? '')} />
-                      <div className="flex flex-col items-center gap-0.5">
-                        {(() => {
-                          const state = matchLiveState(m)
-                          if (state === 'finished') return <span className="font-black text-xl tabular-nums">{m.home_goals} - {m.away_goals}</span>
-                          if (state === 'live') return (
-                            <>
-                              <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                              <span className="text-[10px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} matchClock={m.match_clock} /></span>
-                            </>
-                          )
-                          if (state === 'halftime') return (
-                            <>
-                              <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                              <span className="text-[10px] font-bold text-[var(--yellow)]">DESCANSO</span>
-                            </>
-                          )
-                          return <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
-                        })()}
+                  <div key={m.id} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+                    {/* Cabecera partido — siempre visible */}
+                    <button onClick={toggleMatch} className="w-full p-4 text-left">
+                      <div className="flex items-center justify-between mb-1">
+                        <TeamBadge team={m.home_team} owner={ownerName(m.home_team_id ?? '')} />
+                        <div className="flex flex-col items-center gap-0.5">
+                          {(() => {
+                            if (state === 'finished') return <span className="font-black text-xl tabular-nums">{m.home_goals} - {m.away_goals}</span>
+                            if (state === 'live') return (
+                              <>
+                                <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                                <span className="text-[10px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} matchClock={m.match_clock} /></span>
+                              </>
+                            )
+                            if (state === 'halftime') return (
+                              <>
+                                <span className="font-black text-xl tabular-nums">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                                <span className="text-[10px] font-bold text-[var(--yellow)]">DESCANSO</span>
+                              </>
+                            )
+                            return <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                          })()}
+                        </div>
+                        <TeamBadge team={m.away_team} owner={ownerName(m.away_team_id ?? '')} right />
                       </div>
-                      <TeamBadge team={m.away_team} owner={ownerName(m.away_team_id ?? '')} right />
-                    </div>
-                    {m.match_date && (
-                      <p className="text-xs text-center text-[var(--text-secondary)] mb-3">
-                        {matchLiveState(m) === 'live'
-                          ? <span className="text-red-400 font-semibold">🔴 EN VIVO</span>
-                          : matchLiveState(m) === 'halftime'
-                          ? <span className="text-[var(--yellow)] font-semibold">⏸ Descanso</span>
-                          : new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)
-                        }
-                        {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
-                      </p>
-                    )}
+                      <div className="flex items-center justify-between mt-1">
+                        {m.match_date
+                          ? <p className="text-xs text-[var(--text-secondary)]">
+                              {state === 'live'
+                                ? <span className="text-red-400 font-semibold">🔴 EN VIVO</span>
+                                : state === 'halftime'
+                                ? <span className="text-[var(--yellow)] font-semibold">⏸ Descanso</span>
+                                : new Date(m.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)
+                              }
+                              {' · '}{m.match_type === 'group' ? `Grupo ${m.home_team?.group_name ?? ''}` : STAGE_LABELS[m.match_type ?? ''] ?? m.match_type}
+                            </p>
+                          : <span />}
+                        <span className="text-xs text-[var(--text-secondary)]">{isOpen ? '▲' : '▼'}</span>
+                      </div>
+                    </button>
+
+                    {/* Contenido expandible */}
+                    {isOpen && (
+                    <div className="border-t border-[var(--border)] px-4 pb-4 pt-3">
 
                     {/* Eventos en vivo y finalizados */}
-                    {(matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime' || m.status === 'finished') && (
-                      <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={matchLiveState(m) === 'live' || matchLiveState(m) === 'halftime'} />
+                    {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
+                      <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={state === 'live' || state === 'halftime'} />
                     )}
 
                     {/* Wildcard */}
@@ -1775,6 +1787,8 @@ function MatchesTab({
                       )
                     })}
                   </div>
+                  )}
+                </div>
                 )
               })}
             </div>
