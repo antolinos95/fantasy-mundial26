@@ -233,7 +233,7 @@ const PHASE_TYPES: Record<StatPhase, string[]> = {
   sf:  ['sf','final','third'],
 }
 
-interface TopStat { squad_player_id: string; name: string; flag_emoji: string; photo_url: string | null; count: number }
+interface TopStat { squad_player_id: string; name: string; flag_emoji: string; photo_url: string | null; count: number; shootout?: number }
 
 function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }: { scores: Score[]; players: Player[]; myId: string | null; leagueId: string; draftedTeams: DraftedTeam[]; matches: Match[] }) {
   const [breakdownPlayer, setBreakdownPlayer] = useState<Player | null>(null)
@@ -275,14 +275,18 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
       .then(({ data }) => {
         const filtered = (data ?? []).filter((e: any) => validMatchIds.has(e.match_id))
         type Acc = Record<string, { name: string; flag_emoji: string; photo_url: string | null; count: number }>
-        const goals: Acc = {}, assists: Acc = {}, clean: Acc = {}
+        type GoalAcc = Record<string, { name: string; flag_emoji: string; photo_url: string | null; count: number; shootout: number }>
+        const goals: GoalAcc = {}, assists: Acc = {}, clean: Acc = {}
         for (const e of filtered) {
           const sp = e.squad_player as any
           if (!sp) continue
           const key = e.squad_player_id
           const base = { name: sp.name, flag_emoji: sp.team?.flag_emoji ?? '', photo_url: sp.photo_url ?? null }
-          if (['goal','goal_extra_time','penalty_shootout'].includes(e.event_type)) {
-            goals[key] ??= { ...base, count: 0 }; goals[key].count++
+          if (['goal','goal_extra_time'].includes(e.event_type)) {
+            goals[key] ??= { ...base, count: 0, shootout: 0 }; goals[key].count++
+          }
+          if (e.event_type === 'penalty_shootout') {
+            goals[key] ??= { ...base, count: 0, shootout: 0 }; goals[key].shootout++
           }
           if (e.event_type === 'assist') {
             assists[key] ??= { ...base, count: 0 }; assists[key].count++
@@ -294,7 +298,12 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
         const toList = (acc: Acc): TopStat[] =>
           Object.entries(acc).map(([id, v]) => ({ squad_player_id: id, ...v }))
             .sort((a, b) => b.count - a.count).slice(0, 5)
-        setTopScorers(toList(goals))
+        const scorerList: TopStat[] = Object.entries(goals)
+          .map(([id, v]) => ({ squad_player_id: id, ...v }))
+          .filter(v => v.count > 0 || v.shootout > 0)
+          .sort((a, b) => b.count - a.count || (b.shootout ?? 0) - (a.shootout ?? 0))
+          .slice(0, 5)
+        setTopScorers(scorerList)
         setTopAssists(toList(assists))
         setTopClean(toList(clean))
       })
@@ -407,7 +416,13 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
                   <span className="absolute -bottom-1 -right-1 text-xs">{s.flag_emoji}</span>
                 </div>
                 <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
-                <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs font-bold">{active.icon} {s.count}</span>
+                {statCat === 'goals'
+                  ? <span className="flex items-center gap-1">
+                      <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs font-bold">⚽ {s.count}</span>
+                      {(s.shootout ?? 0) > 0 && <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs text-[var(--text-secondary)]">🥅 {s.shootout}</span>}
+                    </span>
+                  : <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs font-bold">{active.icon} {s.count}</span>
+                }
               </div>
             ))
           }
