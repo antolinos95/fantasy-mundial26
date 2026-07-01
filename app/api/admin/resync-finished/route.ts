@@ -198,13 +198,23 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Tanda de penaltis
-        for (const teamShootout of summData.shootout ?? []) {
-          for (const shot of teamShootout.shots ?? []) {
-            const sp = resolveSquad(shot.player ?? '')
-            if (!sp) continue
-            const eventType = shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout'
-            summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
+        // Tanda de penaltis + winner_team_id
+        const shootout: any[] = summData.shootout ?? []
+        if (shootout.length > 0) {
+          let homeScore = 0, awayScore = 0
+          for (const teamShootout of shootout) {
+            const isHome = teamShootout.id === espnHomeId
+            for (const shot of teamShootout.shots ?? []) {
+              if (shot.didScore) isHome ? homeScore++ : awayScore++
+              const sp = resolveSquad(shot.player ?? '')
+              if (!sp) continue
+              summInserts.push({ match_id: ourMatch.id, squad_player_id: sp.id, event_type: shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout', minute: null, notified: true })
+            }
+          }
+          const winnerTeamId = homeScore > awayScore ? ourMatch.home_team_id : awayScore > homeScore ? ourMatch.away_team_id : null
+          if (winnerTeamId) {
+            await supabaseAdmin.from('matches').update({ winner_team_id: winnerTeamId }).eq('id', ourMatch.id)
+            log.push(`✓ winner_team_id: ${winnerTeamId === ourMatch.home_team_id ? homeEs : awayEs}`)
           }
         }
 

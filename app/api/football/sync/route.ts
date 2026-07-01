@@ -282,8 +282,12 @@ export async function GET(req: NextRequest) {
 
       if (isFinished) {
         await syncCleanSheets(ourMatch.id, homeId, awayId, espnHomeId, espnAwayId, comp.details ?? [])
-        const assistCount = await syncAssists(ourMatch.id, ev.id, homeId, awayId)
-        if (assistCount > 0) log.push(`✓ Assists sincronizadas: ${assistCount}`)
+        const { count: assistCount, winnerTeamId } = await syncAssists(ourMatch.id, ev.id, homeId, awayId, espnHomeId, espnAwayId)
+        if (assistCount > 0) log.push(`✓ Summary eventos: ${assistCount}`)
+        if (winnerTeamId && (ourMatch as any).winner_team_id !== winnerTeamId) {
+          await supabaseAdmin.from('matches').update({ winner_team_id: winnerTeamId }).eq('id', ourMatch.id)
+          log.push(`✓ winner_team_id seteado: ${winnerTeamId === homeId ? homeEs : awayEs}`)
+        }
         await supabaseAdmin.rpc('recalculate_scores', { p_match_id: ourMatch.id })
         log.push(`✓ Scores recalculated: ${homeEs} vs ${awayEs}`)
       }
@@ -463,24 +467,27 @@ function resolvePlayerFromSquad(name: string, squad: { id: string; name: string;
   })
 }
 
+// Returns { count, winnerEspnId } — winnerEspnId is set when match went to shootout
 async function syncAssists(
   matchId: string,
   espnEventId: string,
   homeTeamId: string,
   awayTeamId: string,
-): Promise<number> {
+  espnHomeId: string,
+  espnAwayId: string,
+): Promise<{ count: number; winnerTeamId: string | null }> {
   try {
     const res = await fetch(`${ESPN_BASE}/summary?event=${espnEventId}`, {
       headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
     })
-    if (!res.ok) return 0
+    if (!res.ok) return { count: 0, winnerTeamId: null }
     const data = await res.json()
 
     const { data: squadPlayers } = await supabaseAdmin
       .from('squad_players')
       .select('id, name, team_id')
       .in('team_id', [homeTeamId, awayTeamId])
-    if (!squadPlayers?.length) return 0
+    if (!squadPlayers?.length) return { count: 0, winnerTeamId: null }
     const squad = squadPlayers
 
     // Borrar asistencias y penaltis de tanda previos para reinsertar limpio
@@ -504,21 +511,29 @@ async function syncAssists(
     }
 
     // Tanda de penaltis desde la sección shootout
-    for (const teamShootout of data.shootout ?? []) {
-      for (const shot of teamShootout.shots ?? []) {
-        const sp = resolvePlayerFromSquad(shot.player ?? '', squad)
-        if (!sp) continue
-        const eventType = shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout'
-        toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
+    let winnerTeamId: string | null = null
+    const shootout: any[] = data.shootout ?? []
+    if (shootout.length > 0) {
+      let homeScore = 0, awayScore = 0
+      for (const teamShootout of shootout) {
+        const isHome = teamShootout.id === espnHomeId
+        for (const shot of teamShootout.shots ?? []) {
+          if (shot.didScore) isHome ? homeScore++ : awayScore++
+          const sp = resolvePlayerFromSquad(shot.player ?? '', squad)
+          if (!sp) continue
+          const eventType = shot.didScore ? 'penalty_shootout' : 'penalty_missed_shootout'
+          toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
+        }
       }
+      winnerTeamId = homeScore > awayScore ? homeTeamId : awayScore > homeScore ? awayTeamId : null
     }
 
     if (toInsert.length > 0) {
       await supabaseAdmin.from('player_events').insert(toInsert)
     }
-    return toInsert.length
+    return { count: toInsert.length, winnerTeamId }
   } catch {
-    return 0
+    return { count: 0, winnerTeamId: null }
   }
 }
 
