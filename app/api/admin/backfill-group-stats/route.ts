@@ -147,8 +147,10 @@ export async function POST(req: NextRequest) {
             toInsert.push({ match_id: m.id, squad_player_id: sp.id, event_type: 'assist', minute: null, notified: true })
           }
         }
-        // Portero que jugó (position === 'G' en ESPN, o starter con GK en nuestra BD)
-        if (p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G') {
+        // Portero que jugó: starter o con minutos jugados
+        const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
+        const played = p.starter === true || (p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? 0) > 0
+        if (isGk && played) {
           playedGkNames.push({ name: p.athlete?.displayName ?? '', espnTeamId: team.team?.id ?? '' })
         }
       }
