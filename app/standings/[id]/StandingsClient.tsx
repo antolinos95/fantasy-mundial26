@@ -215,7 +215,7 @@ export default function StandingsClient({
 
 // ─── CLASIFICACIÓN ───────────────────────────────────────────
 
-interface TieStats { hits: number; playerPts: number; wins: number }
+interface TieStats { resultPts: number; hits: number; playerPts: number; bonusPts: number; wcPts: number }
 
 function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }: { scores: Score[]; players: Player[]; myId: string | null; leagueId: string; draftedTeams: DraftedTeam[]; matches: Match[] }) {
   const [topScorers, setTopScorers] = useState<(PlayerStat & { team_name?: string; flag?: string })[]>([])
@@ -228,11 +228,13 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
       .then(({ data }) => {
         const map: Record<string, TieStats> = {}
         for (const r of (data ?? [])) {
-          const t = map[r.player_id] ??= { hits: 0, playerPts: 0, wins: 0 }
+          const t = map[r.player_id] ??= { resultPts: 0, hits: 0, playerPts: 0, bonusPts: 0, wcPts: 0 }
           const pts = Number(r.points)
+          if (r.category === 'result') t.resultPts += pts
           if ((r.category === 'prediction' || r.category === 'wildcard_prediction') && pts > 0) t.hits++
           if (r.category === 'player' || r.category === 'wildcard_player') t.playerPts += pts
-          if (r.category === 'result' && pts === 2) t.wins++
+          if (r.category === 'bonus') t.bonusPts += pts
+          if (r.category === 'wildcard_entry' || r.category === 'wildcard_qualifier') t.wcPts += pts
         }
         setTie(map)
       })
@@ -269,13 +271,12 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
   const entries = players.map(p => ({
     player: p,
     points: Number(scores.find(s => s.player_id === p.id)?.points ?? 0),
-    t: tie[p.id] ?? { hits: 0, playerPts: 0, wins: 0 },
+    t: tie[p.id] ?? { resultPts: 0, hits: 0, playerPts: 0, bonusPts: 0, wcPts: 0 },
     mc: matchCount(p.id),
   })).sort((a, b) =>
     b.points - a.points ||
-    b.t.hits - a.t.hits ||             // 1º más porras acertadas
-    b.t.playerPts - a.t.playerPts ||   // 2º más puntos de jugadores destacados
-    b.t.wins - a.t.wins                // 3º más victorias
+    b.t.hits - a.t.hits ||           // 1º más porras acertadas
+    b.t.playerPts - a.t.playerPts    // 2º más puntos de jugadores destacados
   )
 
   return (
@@ -297,7 +298,13 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
               {e.player.id === myId && <span className="ml-2 text-xs text-[var(--text-secondary)]">(tú)</span>}
             </span>
             <span className="text-[10px] text-[var(--text-secondary)]">
-              🎯 {e.t.hits} · ⭐ {fmtPts(e.t.playerPts)} · ✅ {e.t.wins}
+              {[
+                e.t.resultPts  !== 0 ? `⚽ ${fmtPts(e.t.resultPts)}`  : null,
+                e.t.hits       !== 0 ? `🎯 ${e.t.hits}`               : null,
+                e.t.playerPts  !== 0 ? `⭐ ${fmtPts(e.t.playerPts)}`  : null,
+                e.t.bonusPts   !== 0 ? `🏅 ${fmtPts(e.t.bonusPts)}`  : null,
+                e.t.wcPts      !== 0 ? `🃏 ${fmtPts(e.t.wcPts)}`     : null,
+              ].filter(Boolean).join(' · ') || '—'}
             </span>
           </span>
           <span className="text-right">
