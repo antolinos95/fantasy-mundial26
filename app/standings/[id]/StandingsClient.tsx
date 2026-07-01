@@ -263,13 +263,17 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
   }, [leagueId, scores])
 
   useEffect(() => {
-    const types = PHASE_TYPES[statPhase]
+    const types = new Set(PHASE_TYPES[statPhase])
+    // Construir set de match_ids válidos desde los partidos ya cargados
+    const validMatchIds = new Set(
+      matches.filter(m => types.has(m.match_type ?? '')).map(m => m.id)
+    )
     supabase
       .from('player_events')
-      .select('event_type, squad_player_id, squad_player:squad_player_id(name, photo_url, team:team_id(flag_emoji)), match:match_id(match_type)')
+      .select('event_type, squad_player_id, match_id, squad_player:squad_player_id(name, photo_url, team:team_id(flag_emoji))')
       .in('event_type', ['goal','goal_extra_time','penalty_shootout','assist','clean_sheet_gk','clean_sheet_def'])
       .then(({ data }) => {
-        const filtered = (data ?? []).filter((e: any) => types.includes(e.match?.match_type ?? ''))
+        const filtered = (data ?? []).filter((e: any) => validMatchIds.has(e.match_id))
         type Acc = Record<string, { name: string; flag_emoji: string; photo_url: string | null; count: number }>
         const goals: Acc = {}, assists: Acc = {}, clean: Acc = {}
         for (const e of filtered) {
@@ -294,7 +298,7 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
         setTopAssists(toList(assists))
         setTopClean(toList(clean))
       })
-  }, [statPhase])
+  }, [statPhase, matches])
   // Contador de partidos por jugador: jugados / total de sus equipos
   function matchCount(playerId: string): { played: number; total: number } {
     const teamIds = draftedTeams.filter(dt => dt.player_id === playerId).map(dt => dt.team_id)
@@ -2046,6 +2050,25 @@ function KnockoutBracket({ knockoutMatches, slotResolution, ownerMap }: {
           </span>
         </span>
       )
+    }
+    if (slot?.startsWith('r32:')) {
+      const r32Id = slot.slice(4)
+      const r32m = knockoutMatches.find(m => m.id === r32Id)
+      if (r32m) {
+        const h = r32m.home_team
+        const a = r32m.away_team
+        if (h && a) {
+          return (
+            <span className="text-[10px] text-[var(--text-secondary)] flex items-center gap-0.5 leading-none">
+              <span>{h.flag_emoji}</span>
+              <span className="font-medium">{h.fifa_code ?? h.name.slice(0,3).toUpperCase()}</span>
+              <span>/</span>
+              <span>{a.flag_emoji}</span>
+              <span className="font-medium">{a.fifa_code ?? a.name.slice(0,3).toUpperCase()}</span>
+            </span>
+          )
+        }
+      }
     }
     return (
       <span className={`text-[10px] truncate ${projected ? 'italic' : ''} text-[var(--text-secondary)]`}>
