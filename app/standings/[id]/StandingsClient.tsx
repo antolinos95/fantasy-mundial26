@@ -617,7 +617,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
                 <div className="space-y-1">
                   {items.map(({ e, wc, extra }: any, idx: number) => {
                     const m = e.match
-                    const NEXT_STAGE: Record<string, string> = { r32: 'Dieciseisavos', r16: 'Cuartos', qf: 'Semifinales', sf: 'Final', final: 'Campeón' }
+                    const NEXT_STAGE: Record<string, string> = { r32: 'Octavos', r16: 'Cuartos', qf: 'Semifinales', sf: 'Final', final: 'Campeón' }
                     const classifiedTeam = e.category === 'classified' && m
                       ? (myTeamIds.has(m.home_team_id) ? m.home_team : m.away_team)
                       : null
