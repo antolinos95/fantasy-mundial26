@@ -287,7 +287,7 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
           if (e.event_type === 'assist') {
             assists[key] ??= { ...base, count: 0 }; assists[key].count++
           }
-          if (['clean_sheet_gk','clean_sheet_def'].includes(e.event_type)) {
+          if (e.event_type === 'clean_sheet_gk') {
             clean[key] ??= { ...base, count: 0 }; clean[key].count++
           }
         }
@@ -2002,11 +2002,7 @@ function MundialTab({ matches, draftedTeams, players }: { matches: Match[]; draf
       )}
       {view === 'knockout' && knockoutMatches.length > 0 && (
         <>
-          <p className="text-xs text-center text-[var(--text-secondary)]">
-            {hasGroupResults
-              ? 'Cruces proyectados según la clasificación actual · los terceros son aproximados'
-              : 'Cruces preliminares según las posiciones provisionales de los grupos'}
-          </p>
+
           <KnockoutBracket
             knockoutMatches={knockoutMatches}
             slotResolution={slotResolution}
