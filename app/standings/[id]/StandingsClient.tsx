@@ -3223,30 +3223,35 @@ function WildcardButton({ match, leagueId, myId, scores }: {
     setCancelling(false)
   }
 
+  const [detailsOpen, setDetailsOpen] = useState(false)
+
   if (entry) {
     const costLabel = entry.cost_charged
       ? (entryCost === 0 ? '' : ` · −${entryCost} pt${entryCost > 1 ? 's' : ''} cobrados`)
       : ` · coste pendiente al cierre`
     return (
       <>
-        <div className="mt-2 border border-[var(--accent)]/20 rounded-xl px-3 py-2 space-y-1">
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-[var(--accent)] flex-1 font-semibold">⚡ Wildcard{costLabel}</p>
+        <div className="mt-2 border border-[var(--accent)]/20 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <button onClick={() => setDetailsOpen(o => !o)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+              <p className="text-xs text-[var(--accent)] font-semibold truncate">⚡ Wildcard{costLabel}</p>
+              <span className="text-[10px] text-[var(--text-secondary)] shrink-0">{detailsOpen ? '▲' : '▼'}</span>
+            </button>
             {!locked && (
               <>
                 <button onClick={() => setShowModal(true)}
-                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors">
+                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors shrink-0">
                   ✏️ Editar
                 </button>
                 <button onClick={cancelWildcard} disabled={cancelling}
-                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40">
+                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--red)] transition-colors disabled:opacity-40 shrink-0">
                   {cancelling ? '…' : '✕'}
                 </button>
               </>
             )}
           </div>
-          {preview && (
-            <>
+          {detailsOpen && preview && (
+            <div className="border-t border-[var(--accent)]/20 px-3 py-2 space-y-1">
               {preview.qualifierName && (
                 <p className="text-xs text-[var(--text-secondary)]">🏆 <span className="text-white">{preview.qualifierName}</span></p>
               )}
@@ -3256,7 +3261,7 @@ function WildcardButton({ match, leagueId, myId, scores }: {
               {preview.players.length > 0 && (
                 <p className="text-xs text-[var(--text-secondary)]">⭐ <span className="text-white">{preview.players.join(', ')}</span></p>
               )}
-            </>
+            </div>
           )}
         </div>
         {showModal && (
