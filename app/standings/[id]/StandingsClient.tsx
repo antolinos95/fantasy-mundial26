@@ -217,10 +217,31 @@ export default function StandingsClient({
 
 interface TieStats { resultPts: number; hits: number; predPts: number; playerPts: number; bonusPts: number; wcPts: number }
 
+type StatPhase = 'all' | 'ko' | 'r16' | 'qf' | 'sf'
+const PHASE_OPTIONS: { value: StatPhase; label: string }[] = [
+  { value: 'all', label: 'Todo el torneo' },
+  { value: 'ko',  label: 'Eliminatorias' },
+  { value: 'r16', label: 'Desde octavos' },
+  { value: 'qf',  label: 'Desde cuartos' },
+  { value: 'sf',  label: 'Desde semis' },
+]
+const PHASE_TYPES: Record<StatPhase, string[]> = {
+  all: ['group','r32','r16','qf','sf','final','third'],
+  ko:  ['r32','r16','qf','sf','final','third'],
+  r16: ['r16','qf','sf','final','third'],
+  qf:  ['qf','sf','final','third'],
+  sf:  ['sf','final','third'],
+}
+
+interface TopStat { squad_player_id: string; name: string; flag_emoji: string; photo_url: string | null; count: number }
+
 function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }: { scores: Score[]; players: Player[]; myId: string | null; leagueId: string; draftedTeams: DraftedTeam[]; matches: Match[] }) {
-  const [topScorers, setTopScorers] = useState<(PlayerStat & { team_name?: string; flag?: string })[]>([])
   const [breakdownPlayer, setBreakdownPlayer] = useState<Player | null>(null)
   const [tie, setTie] = useState<Record<string, TieStats>>({})
+  const [statPhase, setStatPhase] = useState<StatPhase>('all')
+  const [topScorers,  setTopScorers]  = useState<TopStat[]>([])
+  const [topAssists,  setTopAssists]  = useState<TopStat[]>([])
+  const [topClean,    setTopClean]    = useState<TopStat[]>([])
 
   // Estadísticas de desempate desde el libro mayor
   useEffect(() => {
@@ -241,25 +262,38 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
   }, [leagueId, scores])
 
   useEffect(() => {
-    supabase.from('player_stats_global')
-      .select('*')
-      .gt('goals', 0)
-      .order('goals', { ascending: false })
-      .order('own_goals', { ascending: true })  // ante empate, menos autogoles arriba
-      .order('red_cards', { ascending: true })
-      .limit(5)
-      .then(({ data, error }) => {
-        if (error) { console.error('player_stats_global:', error.message); return }
-        if (data) setTopScorers(data.map((d: any) => ({
-          ...d,
-          goals:     Number(d.goals)     ?? 0,
-          own_goals: Number(d.own_goals) ?? 0,
-          red_cards: Number(d.red_cards) ?? 0,
-          flag:      d.flag_emoji,
-          photo_url: d.photo_url,
-        })))
+    const types = PHASE_TYPES[statPhase]
+    supabase
+      .from('player_events')
+      .select('event_type, squad_player:squad_player_id(id, name, team:team_id(flag_emoji)), match:match_id(match_type), squad_player_id')
+      .in('event_type', ['goal','goal_extra_time','penalty_shootout','assist','clean_sheet_gk','clean_sheet_def'])
+      .then(({ data }) => {
+        const filtered = (data ?? []).filter((e: any) => types.includes(e.match?.match_type ?? ''))
+        type Acc = Record<string, { name: string; flag_emoji: string; photo_url: string | null; count: number }>
+        const goals: Acc = {}, assists: Acc = {}, clean: Acc = {}
+        for (const e of filtered) {
+          const sp = e.squad_player as any
+          if (!sp) continue
+          const key = e.squad_player_id
+          const base = { name: sp.name, flag_emoji: sp.team?.flag_emoji ?? '', photo_url: sp.photo_url ?? null }
+          if (['goal','goal_extra_time','penalty_shootout'].includes(e.event_type)) {
+            goals[key] ??= { ...base, count: 0 }; goals[key].count++
+          }
+          if (e.event_type === 'assist') {
+            assists[key] ??= { ...base, count: 0 }; assists[key].count++
+          }
+          if (['clean_sheet_gk','clean_sheet_def'].includes(e.event_type)) {
+            clean[key] ??= { ...base, count: 0 }; clean[key].count++
+          }
+        }
+        const toList = (acc: Acc): TopStat[] =>
+          Object.entries(acc).map(([id, v]) => ({ squad_player_id: id, ...v }))
+            .sort((a, b) => b.count - a.count).slice(0, 5)
+        setTopScorers(toList(goals))
+        setTopAssists(toList(assists))
+        setTopClean(toList(clean))
       })
-  }, [leagueId])
+  }, [statPhase])
   // Contador de partidos por jugador: jugados / total de sus equipos
   function matchCount(playerId: string): { played: number; total: number } {
     const teamIds = draftedTeams.filter(dt => dt.player_id === playerId).map(dt => dt.team_id)
@@ -326,30 +360,43 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
       />
     )}
 
-    {/* Top Goleadores */}
-    {topScorers.length > 0 && (
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden mt-4">
-        <div className="px-4 py-3 border-b border-[var(--border)]">
-          <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">⚽ Top Goleadores</p>
-        </div>
-        {topScorers.map((s, i) => (
-          <div key={s.squad_player_id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] last:border-0">
-            <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
-            <div className="relative shrink-0">
-              <img src={s.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-9 h-9 rounded-full object-cover bg-[var(--bg-elevated)]"
-                onError={ev => { (ev.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
-              <span className="absolute -bottom-1 -right-1 text-xs">{s.flag}</span>
-            </div>
-            <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full">⚽ {s.goals}</span>
-              {s.own_goals > 0 && <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full">🥅 {s.own_goals}</span>}
-              {s.red_cards > 0 && <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full">🟥 {s.red_cards}</span>}
-            </div>
-          </div>
-        ))}
+    {/* Selector de fase + tops */}
+    <div className="mt-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-[var(--text-secondary)] shrink-0">Estadísticas:</span>
+        <select
+          value={statPhase}
+          onChange={e => setStatPhase(e.target.value as StatPhase)}
+          className="flex-1 text-xs bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-[var(--text-primary)]"
+        >
+          {PHASE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
-    )}
+
+      {([
+        { list: topScorers,  icon: '⚽', label: 'Top Goleadores',       badge: (n: number) => `⚽ ${n}` },
+        { list: topAssists,  icon: '👟', label: 'Top Asistentes',       badge: (n: number) => `👟 ${n}` },
+        { list: topClean,    icon: '🧤', label: 'Top Porterías a cero', badge: (n: number) => `🧤 ${n}` },
+      ] as const).map(({ list, icon, label, badge }) => list.length > 0 && (
+        <div key={label} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-[var(--border)]">
+            <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">{icon} {label}</p>
+          </div>
+          {list.map((s, i) => (
+            <div key={s.squad_player_id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] last:border-0">
+              <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
+              <div className="relative shrink-0">
+                <img src={s.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-9 h-9 rounded-full object-cover bg-[var(--bg-elevated)]"
+                  onError={ev => { (ev.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
+                <span className="absolute -bottom-1 -right-1 text-xs">{s.flag_emoji}</span>
+              </div>
+              <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
+              <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs">{badge(s.count)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   </>
   )
 }
