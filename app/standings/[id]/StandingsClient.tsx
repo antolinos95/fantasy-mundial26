@@ -468,7 +468,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
               { key: 'result',     ...CAT_INFO.result,     pts: byCat.result ?? 0 },
               { key: 'prediction', ...CAT_INFO.prediction, pts: (byCat.prediction ?? 0) + (byCat.wildcard_prediction ?? 0) },
               { key: 'player',     ...CAT_INFO.player,     pts: (byCat.player ?? 0) + (byCat.wildcard_player ?? 0) },
-              { key: 'bonus',      ...CAT_INFO.bonus,      pts: byCat.bonus ?? 0 },
+              { key: 'bonus',      ...CAT_INFO.bonus,      pts: (byCat.bonus ?? 0) + (byCat.classified ?? 0) },
               ...(wcCostPts !== 0 ? [{ key: 'wildcard', label: 'Wildcard', icon: '🃏', pts: wcCostPts }] : []),
             ].filter(g => g.pts !== 0)
             return (
@@ -503,7 +503,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
             addGroup('Resultados',            '⚽', ['result'])
             addGroup('Porras',                '🎯', ['prediction', 'wildcard_prediction'])
             addGroup('Jugadores destacados',  '⭐', ['player', 'wildcard_player'])
-            addGroup('Bonos de clasificación','🏅', ['bonus'])
+            addGroup('Bonos de clasificación','🏅', ['bonus', 'classified'])
             // Wildcard entrada+clasificado: agrupar por partido en una sola línea
             const wcCostEntries = entries.filter(e => ['wildcard_entry','wildcard_qualifier'].includes(e.category))
             if (wcCostEntries.length) {
