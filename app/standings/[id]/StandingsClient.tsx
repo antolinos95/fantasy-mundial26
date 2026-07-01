@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, DEFAULT_PLAYER_IMG } from '../../../lib/supabase'
 import type {
@@ -3366,6 +3366,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onCl
   const [squadPlayers, setSquadPlayers] = useState<SquadPlayer[]>([])
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(saved?.selectedPlayers ?? [])
   const [saving, setSaving] = useState(false)
+  const submitting = useRef(false)
 
   useEffect(() => {
     if (!match.home_team_id || !match.away_team_id) return
@@ -3410,6 +3411,8 @@ function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onCl
 
   async function confirm() {
     if (!qualifierPick) { alert('Elige qué equipo pasa'); return }
+    if (submitting.current) return
+    submitting.current = true
     setSaving(true)
     try {
       if (!editing) {
@@ -3451,6 +3454,7 @@ function WildcardModal({ match, leagueId, myId, entryCost, editing = false, onCl
       onDone(entry)
     } finally {
       setSaving(false)
+      submitting.current = false
     }
   }
 
