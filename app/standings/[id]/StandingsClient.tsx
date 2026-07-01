@@ -239,6 +239,7 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
   const [breakdownPlayer, setBreakdownPlayer] = useState<Player | null>(null)
   const [tie, setTie] = useState<Record<string, TieStats>>({})
   const [statPhase, setStatPhase] = useState<StatPhase>('all')
+  const [statCat,   setStatCat]   = useState<'goals' | 'assists' | 'clean'>('goals')
   const [topScorers,  setTopScorers]  = useState<TopStat[]>([])
   const [topAssists,  setTopAssists]  = useState<TopStat[]>([])
   const [topClean,    setTopClean]    = useState<TopStat[]>([])
@@ -265,7 +266,7 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
     const types = PHASE_TYPES[statPhase]
     supabase
       .from('player_events')
-      .select('event_type, squad_player:squad_player_id(id, name, team:team_id(flag_emoji)), match:match_id(match_type), squad_player_id')
+      .select('event_type, squad_player_id, squad_player:squad_player_id(name, photo_url, team:team_id(flag_emoji)), match:match_id(match_type)')
       .in('event_type', ['goal','goal_extra_time','penalty_shootout','assist','clean_sheet_gk','clean_sheet_def'])
       .then(({ data }) => {
         const filtered = (data ?? []).filter((e: any) => types.includes(e.match?.match_type ?? ''))
@@ -360,43 +361,55 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
       />
     )}
 
-    {/* Selector de fase + tops */}
-    <div className="mt-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-[var(--text-secondary)] shrink-0">Estadísticas:</span>
-        <select
-          value={statPhase}
-          onChange={e => setStatPhase(e.target.value as StatPhase)}
-          className="flex-1 text-xs bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-[var(--text-primary)]"
-        >
-          {PHASE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </div>
-
-      {([
-        { list: topScorers,  icon: '⚽', label: 'Top Goleadores',       badge: (n: number) => `⚽ ${n}` },
-        { list: topAssists,  icon: '👟', label: 'Top Asistentes',       badge: (n: number) => `👟 ${n}` },
-        { list: topClean,    icon: '🧤', label: 'Top Porterías a cero', badge: (n: number) => `🧤 ${n}` },
-      ] as const).map(({ list, icon, label, badge }) => list.length > 0 && (
-        <div key={label} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-[var(--border)]">
-            <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">{icon} {label}</p>
-          </div>
-          {list.map((s, i) => (
-            <div key={s.squad_player_id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] last:border-0">
-              <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
-              <div className="relative shrink-0">
-                <img src={s.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-9 h-9 rounded-full object-cover bg-[var(--bg-elevated)]"
-                  onError={ev => { (ev.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
-                <span className="absolute -bottom-1 -right-1 text-xs">{s.flag_emoji}</span>
+    {/* Estadísticas de jugadores */}
+    {(() => {
+      const cats = [
+        { key: 'goals'  as const, icon: '⚽', label: 'Goleadores',     list: topScorers },
+        { key: 'assists'as const, icon: '👟', label: 'Asistentes',     list: topAssists },
+        { key: 'clean'  as const, icon: '🧤', label: 'Port. a cero',   list: topClean   },
+      ]
+      const active = cats.find(c => c.key === statCat)!
+      return (
+        <div className="mt-4 bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+          {/* Header: tabs de categoría + selector de fase */}
+          <div className="px-4 pt-3 pb-0 border-b border-[var(--border)]">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex gap-1">
+                {cats.map(c => (
+                  <button key={c.key} onClick={() => setStatCat(c.key)}
+                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${statCat === c.key ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'}`}>
+                    {c.icon} {c.label}
+                  </button>
+                ))}
               </div>
-              <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
-              <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs">{badge(s.count)}</span>
+              <select
+                value={statPhase}
+                onChange={e => setStatPhase(e.target.value as StatPhase)}
+                className="text-[10px] bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-1.5 py-1 text-[var(--text-secondary)]"
+              >
+                {PHASE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
-          ))}
+          </div>
+          {/* Lista */}
+          {active.list.length === 0
+            ? <p className="text-xs text-[var(--text-secondary)] text-center py-4">Sin datos</p>
+            : active.list.map((s, i) => (
+              <div key={s.squad_player_id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] last:border-0">
+                <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
+                <div className="relative shrink-0">
+                  <img src={s.photo_url ?? DEFAULT_PLAYER_IMG} alt="" className="w-9 h-9 rounded-full object-cover bg-[var(--bg-elevated)]"
+                    onError={ev => { (ev.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
+                  <span className="absolute -bottom-1 -right-1 text-xs">{s.flag_emoji}</span>
+                </div>
+                <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
+                <span className="bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full text-xs font-bold">{active.icon} {s.count}</span>
+              </div>
+            ))
+          }
         </div>
-      ))}
-    </div>
+      )
+    })()}
   </>
   )
 }
