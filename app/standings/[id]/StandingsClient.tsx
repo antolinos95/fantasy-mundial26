@@ -3164,6 +3164,7 @@ function WildcardButton({ match, leagueId, myId, scores }: {
     pred: { home: number; away: number } | null
     players: string[]
   } | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   const locked = match.match_date
     ? new Date(match.match_date).getTime() - 2 * 60 * 60 * 1000 <= Date.now()
@@ -3222,8 +3223,6 @@ function WildcardButton({ match, leagueId, myId, scores }: {
     }
     setCancelling(false)
   }
-
-  const [detailsOpen, setDetailsOpen] = useState(false)
 
   if (entry) {
     const costLabel = entry.cost_charged
