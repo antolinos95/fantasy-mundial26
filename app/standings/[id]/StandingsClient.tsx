@@ -231,7 +231,7 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
           const t = map[r.player_id] ??= { hits: 0, playerPts: 0, wins: 0 }
           const pts = Number(r.points)
           if ((r.category === 'prediction' || r.category === 'wildcard_prediction') && pts > 0) t.hits++
-          if (r.category === 'player') t.playerPts += pts
+          if (r.category === 'player' || r.category === 'wildcard_player') t.playerPts += pts
           if (r.category === 'result' && pts === 2) t.wins++
         }
         setTie(map)
