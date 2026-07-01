@@ -1125,6 +1125,10 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
   const [events, setEvents] = useState<PlayerEvent[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [myWcEntry, setMyWcEntry] = useState<boolean | null>(null)
+
+  const isKo = match.match_type && match.match_type !== 'group'
+  const hadMyTeam = myTeamIds.includes(match.home_team_id ?? '') || myTeamIds.includes(match.away_team_id ?? '')
 
   function toggle() {
     setOpen(o => {
@@ -1133,11 +1137,16 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
         Promise.all([
           supabase.from('match_lineups')
             .select('team_id, squad_player:squad_players(*)')
-            .eq('match_id', match.id).eq('player_id', myId),
-          supabase.from('player_events').select('*').eq('match_id', match.id),
-        ]).then(([lu, ev]) => {
-          setLineup((lu.data as any[]) ?? [])
-          setEvents((ev.data as PlayerEvent[]) ?? [])
+            .eq('match_id', match.id).eq('player_id', myId).then(r => r),
+          supabase.from('player_events').select('*').eq('match_id', match.id).then(r => r),
+          isKo && !hadMyTeam
+            ? supabase.from('wildcard_entries').select('id')
+                .eq('match_id', match.id).eq('league_id', leagueId).eq('player_id', myId).then(r => r)
+            : Promise.resolve(null),
+        ]).then(([lu, ev, wc]) => {
+          setLineup(((lu as any).data as any[]) ?? [])
+          setEvents(((ev as any).data as PlayerEvent[]) ?? [])
+          if (wc !== null) setMyWcEntry(((wc as any).data?.length ?? 0) > 0)
           setLoading(false)
           setLoaded(true)
         })
@@ -1178,7 +1187,14 @@ function FinishedMatchCard({ match, myId, myTeamIds, prediction, ownerName, play
                 {new Date(match.match_date).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Madrid' } as any)}
               </p>
             : <span />}
-          <span className="text-xs text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+          <div className="flex items-center gap-1.5">
+            {isKo && !hadMyTeam && myWcEntry !== null && (
+              myWcEntry
+                ? <span className="text-[10px] bg-green-900/30 text-[var(--green)] border border-[var(--green)]/40 px-1.5 py-0.5 rounded-full font-medium">🃏 Wildcard</span>
+                : <span className="text-[10px] bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border)] px-1.5 py-0.5 rounded-full">Sin wildcard</span>
+            )}
+            <span className="text-xs text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+          </div>
         </div>
       </button>
 
@@ -1466,57 +1482,96 @@ function MatchesTab({
     const homeOwner = ownerName(m.home_team_id ?? '')
     const awayOwner = ownerName(m.away_team_id ?? '')
     const state = matchLiveState(m)
+    const [open, setOpen] = useState(false)
+    const [myWcEntry, setMyWcEntry] = useState<boolean | null>(null) // null=no cargado
+
+    const isKoMatch = league.wildcard_enabled && m.match_type && m.match_type !== 'group'
+    const isEligibleWc = isKoMatch && myId &&
+      m.home_team_id && m.away_team_id &&
+      !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id)
+
+    function toggle() {
+      setOpen(o => {
+        if (!o && myWcEntry === null && isEligibleWc) {
+          supabase.from('wildcard_entries').select('id').eq('match_id', m.id)
+            .eq('league_id', leagueId).eq('player_id', myId!)
+            .then(({ data }) => setMyWcEntry((data?.length ?? 0) > 0))
+        }
+        return !o
+      })
+    }
+
+    // Distintivo para partidos pendientes con wildcard disponible
+    const missingWc = isEligibleWc && m.status !== 'finished' && myWcEntry === false
+
     return (
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="text-lg">{m.home_team?.flag_emoji}</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{m.home_team?.name}</p>
-            {homeOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{homeOwner}</p>}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+        <button onClick={toggle} className="w-full px-4 py-3 text-left">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">{m.home_team?.flag_emoji}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{m.home_team?.name}</p>
+              {homeOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{homeOwner}</p>}
+            </div>
+            <div className="flex flex-col items-center shrink-0">
+              {state === 'finished' ? (
+                <span className="font-black tabular-nums text-sm">{m.home_goals} - {m.away_goals}</span>
+              ) : state === 'live' ? (
+                <>
+                  <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                  <span className="text-[9px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} matchClock={m.match_clock} /></span>
+                </>
+              ) : state === 'halftime' ? (
+                <>
+                  <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
+                  <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
+                </>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
+                  {m.match_date && (
+                    <span className="text-[9px] text-[var(--text-secondary)]">
+                      {new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0 text-right">
+              <p className="text-sm font-medium truncate">{m.away_team?.name}</p>
+              {awayOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{awayOwner}</p>}
+            </div>
+            <span className="text-lg">{m.away_team?.flag_emoji}</span>
           </div>
-          <div className="flex flex-col items-center shrink-0">
-            {state === 'finished' ? (
-              <span className="font-black tabular-nums text-sm">{m.home_goals} - {m.away_goals}</span>
-            ) : state === 'live' ? (
-              <>
-                <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                <span className="text-[9px] font-bold text-red-400 animate-pulse"><LiveClock matchDate={m.match_date!} matchClock={m.match_clock} /></span>
-              </>
-            ) : state === 'halftime' ? (
-              <>
-                <span className="font-black tabular-nums text-sm">{m.home_goals ?? 0} - {m.away_goals ?? 0}</span>
-                <span className="text-[9px] font-bold text-[var(--yellow)]">DESC.</span>
-              </>
-            ) : (
-              <div className="flex flex-col items-center">
-                <span className="text-[var(--text-secondary)] font-bold text-sm">vs</span>
-                {m.match_date && (
-                  <span className="text-[9px] text-[var(--text-secondary)]">
-                    {new Date(m.match_date).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })}
-                  </span>
-                )}
-              </div>
+          {/* Fila de distintivos + flecha */}
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="flex gap-1">
+              {missingWc && <span className="text-[10px] bg-[var(--yellow)]/20 text-[var(--yellow)] border border-[var(--yellow)]/40 px-1.5 py-0.5 rounded-full font-medium">Sin wildcard</span>}
+              {isEligibleWc && m.status === 'finished' && myWcEntry !== null && (
+                myWcEntry
+                  ? <span className="text-[10px] bg-green-900/30 text-[var(--green)] border border-[var(--green)]/40 px-1.5 py-0.5 rounded-full font-medium">🃏 Wildcard</span>
+                  : <span className="text-[10px] bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border)] px-1.5 py-0.5 rounded-full">Sin wildcard</span>
+              )}
+            </div>
+            <span className="text-xs text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+          </div>
+        </button>
+
+        {open && (
+          <div className="border-t border-[var(--border)] px-4 pb-3 pt-2">
+            {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
+              <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={state === 'live' || state === 'halftime'} />
+            )}
+            {isEligibleWc && m.status !== 'finished' && (
+              <WildcardButton match={m} leagueId={leagueId} myId={myId!} scores={scores} />
+            )}
+            {isKoMatch && isRevealed(m) && (
+              <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
+            )}
+            {isRevealed(m) && (
+              <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
             )}
           </div>
-          <div className="flex-1 min-w-0 text-right">
-            <p className="text-sm font-medium truncate">{m.away_team?.name}</p>
-            {awayOwner && <p className="text-xs text-[var(--text-secondary)] truncate">{awayOwner}</p>}
-          </div>
-          <span className="text-lg">{m.away_team?.flag_emoji}</span>
-        </div>
-        {(state === 'live' || state === 'halftime' || m.status === 'finished') && (
-          <LiveMatchEvents matchId={m.id} homeTeamId={m.home_team_id} isLive={state === 'live' || state === 'halftime'} />
-        )}
-        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && m.status !== 'finished' && myId &&
-          m.home_team_id && m.away_team_id &&
-          !myTeamIds.includes(m.home_team_id) && !myTeamIds.includes(m.away_team_id) && (
-          <WildcardButton match={m} leagueId={leagueId} myId={myId} scores={scores} />
-        )}
-        {league.wildcard_enabled && m.match_type && m.match_type !== 'group' && isRevealed(m) && (
-          <WildcardParticipants matchId={m.id} leagueId={leagueId} players={players} />
-        )}
-        {isRevealed(m) && (
-          <AllPredictionsReveal match={m} players={players} leagueId={league.id} />
         )}
       </div>
     )
