@@ -440,6 +440,7 @@ interface LogEntry {
   points: number
   detail: string | null
   match_id: string | null
+  created_at?: string | null
   match?: { match_type?: string; home_team_id?: string; away_team_id?: string; home_team?: { name: string; flag_emoji: string }; away_team?: { name: string; flag_emoji: string } } | null
 }
 
@@ -471,7 +472,7 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
   useEffect(() => {
     Promise.all([
       supabase.from('score_log')
-        .select('category, points, detail, match_id, match:matches(match_date, match_type, home_team_id, away_team_id, home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
+        .select('category, points, detail, match_id, created_at, match:matches(match_date, match_type, home_team_id, away_team_id, home_team:teams!matches_home_team_id_fkey(name,flag_emoji), away_team:teams!matches_away_team_id_fkey(name,flag_emoji))')
         .eq('league_id', leagueId).eq('player_id', player.id)
         .then(r => r),
       supabase.from('drafted_teams').select('team_id')
@@ -482,8 +483,8 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
       const sorted = (data as any[] ?? [])
         .map(d => ({ ...d, points: Number(d.points) }))
         .sort((a, b) => {
-          const da = a.match?.match_date ?? ''
-          const db = b.match?.match_date ?? ''
+          const da = a.match?.match_date ?? a.created_at ?? ''
+          const db = b.match?.match_date ?? b.created_at ?? ''
           return da < db ? -1 : da > db ? 1 : 0
         })
       setEntries(sorted)
