@@ -441,7 +441,7 @@ interface LogEntry {
   detail: string | null
   match_id: string | null
   created_at?: string | null
-  match?: { match_type?: string; home_team_id?: string; away_team_id?: string; home_team?: { name: string; flag_emoji: string }; away_team?: { name: string; flag_emoji: string } } | null
+  match?: { match_date?: string; match_type?: string; home_team_id?: string; away_team_id?: string; home_team?: { name: string; flag_emoji: string }; away_team?: { name: string; flag_emoji: string } } | null
 }
 
 const CAT_INFO: Record<string, { label: string; icon: string }> = {
