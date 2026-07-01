@@ -556,8 +556,8 @@ function ScoreBreakdownModal({ player, leagueId, total, onClose }: {
           {!loading && entries.length > 0 && (() => {
             const wcCostPts = (byCat.wildcard_entry ?? 0) + (byCat.wildcard_qualifier ?? 0)
             const summaryGroups = [
-              { key: 'result',     ...CAT_INFO.result,     pts: byCat.result ?? 0 },
               { key: 'prediction', ...CAT_INFO.prediction, pts: (byCat.prediction ?? 0) + (byCat.wildcard_prediction ?? 0) },
+              { key: 'result',     ...CAT_INFO.result,     pts: byCat.result ?? 0 },
               { key: 'player',     ...CAT_INFO.player,     pts: (byCat.player ?? 0) + (byCat.wildcard_player ?? 0) },
               { key: 'bonus',      ...CAT_INFO.bonus,      pts: (byCat.bonus ?? 0) + (byCat.classified ?? 0) },
               ...(wcCostPts !== 0 ? [{ key: 'wildcard', label: 'Wildcard', icon: '🃏', pts: wcCostPts }] : []),
