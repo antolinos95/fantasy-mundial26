@@ -299,12 +299,12 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
             </span>
             <span className="text-[10px] text-[var(--text-secondary)]">
               {[
-                e.t.resultPts !== 0 ? `⚽ ${fmtPts(e.t.resultPts)}`                                       : null,
-                e.t.predPts   !== 0 ? `🎯 ${fmtPts(e.t.predPts)}${e.t.hits ? ` (${e.t.hits}✓)` : ''}`   : null,
-                e.t.playerPts !== 0 ? `⭐ ${fmtPts(e.t.playerPts)}`                                       : null,
-                e.t.bonusPts  !== 0 ? `🏅 ${fmtPts(e.t.bonusPts)}`                                       : null,
-                e.t.wcPts     !== 0 ? `🃏 ${fmtPts(e.t.wcPts)}`                                          : null,
-              ].filter(Boolean).join(' · ') || '—'}
+                `⚽ ${fmtPts(e.t.resultPts)}`,
+                `🎯 ${fmtPts(e.t.predPts)}${e.t.hits ? ` (${e.t.hits}✓)` : ''}`,
+                `⭐ ${fmtPts(e.t.playerPts)}`,
+                `🏅 ${fmtPts(e.t.bonusPts)}`,
+                `🃏 ${fmtPts(e.t.wcPts)}`,
+              ].join(' · ')}
             </span>
           </span>
           <span className="text-right">
