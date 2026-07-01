@@ -347,8 +347,8 @@ function StandingsTab({ scores, players, myId, leagueId, draftedTeams, matches }
             </span>
             <span className="text-[10px] text-[var(--text-secondary)]">
               {[
-                `⚽ ${fmtPts(e.t.resultPts)}`,
                 `🎯 ${fmtPts(e.t.predPts)}${e.t.hits ? ` (${e.t.hits}✓)` : ''}`,
+                `⚽ ${fmtPts(e.t.resultPts)}`,
                 `⭐ ${fmtPts(e.t.playerPts)}`,
                 `🏅 ${fmtPts(e.t.bonusPts)}`,
                 `🃏 ${fmtPts(e.t.wcPts)}`,
