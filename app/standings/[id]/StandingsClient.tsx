@@ -4136,7 +4136,6 @@ function StatsTab({ leagueId, players, myId, scores, onOpenWrapped }: { leagueId
                     <td className="text-center px-2 py-2 tabular-nums">{st.streakBest}</td>
                   </tr>
                 )
-              }
               })}
             </tbody>
           </table>
