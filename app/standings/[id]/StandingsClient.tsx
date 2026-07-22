@@ -10,7 +10,7 @@ import type {
 import RulesModal from '../../../components/RulesModal'
 import PushSubscribeButton from '../../../components/PushSubscribeButton'
 
-type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'avisos' | 'admin'
+type Tab = 'standings' | 'my-teams' | 'matches' | 'mundial' | 'avisos' | 'stats' | 'admin'
 
 const STAGE_LABELS: Record<string, string> = { r16: 'Octavos', qf: 'Cuartos', sf: 'Semifinal', final: 'Final' }
 const STAGE_PTS:   Record<string, number>  = { r16: 1, qf: 3, sf: 5, final: 8 }
@@ -42,7 +42,7 @@ export default function StandingsClient({
   matches: Match[]
 }) {
   const router = useRouter()
-  const [tab, setTab]               = useState<Tab>('standings')
+  const [tab, setTab]               = useState<Tab>('stats')
   const [myId, setMyId]             = useState<string | null>(null)
   const [isAdmin, setIsAdmin]       = useState(false)
   const playerIds = new Set(players.map(p => p.id))
@@ -52,6 +52,7 @@ export default function StandingsClient({
   const [, setTick] = useState(0)
   const [showRules, setShowRules]   = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showWrapped, setShowWrapped] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -137,6 +138,7 @@ export default function StandingsClient({
   }, [league.id])
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'stats',     label: '📊 Stats' },
     { id: 'standings', label: '🏆 Tabla' },
     { id: 'my-teams',  label: '⚽ Mis equipos' },
     { id: 'matches',   label: '📋 Partidos' },
@@ -168,6 +170,12 @@ export default function StandingsClient({
         </div>
       </div>
 
+      {showWrapped && myId && (
+        <WrappedModal
+          leagueId={league.id} players={players} myId={myId}
+          scores={liveScores} onClose={() => setShowWrapped(false)}
+        />
+      )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} wildcardEnabled={league.wildcard_enabled} />}
       <PushSubscribeButton />
       {showSettings && myId && (
@@ -206,6 +214,7 @@ export default function StandingsClient({
       {tab === 'avisos' && (
         <AvisosTab leagueId={league.id} onRead={() => setUnreadAvisos(0)} />
       )}
+      {tab === 'stats' && <StatsTab leagueId={league.id} players={players} myId={myId} scores={liveScores} onOpenWrapped={() => setShowWrapped(true)} />}
       {tab === 'admin' && isAdmin && (
         <AdminTab league={league} matches={liveMatches} players={players} router={router} />
       )}
@@ -3787,3 +3796,588 @@ function AvisosTab({ leagueId, onRead }: { leagueId: string; onRead: () => void 
   )
 }
 
+
+// ─── STATS TAB ───────────────────────────────────────────────
+
+interface PlayerStats {
+  playerId: string
+  playerName: string
+  totalPreds: number
+  exact: number
+  correctResult: number
+  wrong: number
+  favPred: string | null
+  favPredCount: number
+  bestMatchLabel: string
+  bestMatchPts: number
+  worstMatchLabel: string
+  worstMatchPts: number
+  bestTeamName: string | null
+  bestTeamPts: number
+  topPlayerName: string | null
+  topPlayerPts: number
+  topPlayerPhoto: string | null
+  streakBest: number
+  winsCount: number
+  totalPts: number
+  rank: number
+}
+
+async function loadAllStats(leagueId: string, players: Player[], scores: Score[]): Promise<PlayerStats[]> {
+  const [
+    { data: scorelog },
+    { data: preds },
+    { data: matches },
+    { data: drafted },
+    { data: events },
+  ] = await Promise.all([
+    supabase.from('score_log').select('*').eq('league_id', leagueId),
+    supabase.from('predictions').select('*,matches!inner(id,home_goals,away_goals,home_team_id,away_team_id,status,match_type)'),
+    supabase.from('matches')
+      .select('*,home_team:teams!matches_home_team_id_fkey(name,flag_emoji),away_team:teams!matches_away_team_id_fkey(name,flag_emoji)')
+      .or(`league_id.is.null,league_id.eq.${leagueId}`).order('match_date'),
+    supabase.from('drafted_teams').select('*,team:teams(id,name,flag_emoji)').eq('league_id', leagueId),
+    supabase.from('player_events').select('*,squad_player:squad_players(id,name,team_id,position,photo_url)'),
+  ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const matchMap: Record<string, any> = Object.fromEntries((matches ?? []).map(m => [m.id, m]))
+
+  const sortedScores = [...scores].sort((a, b) => b.points - a.points)
+
+  // KO phase: goals=1, assist=0.5, clean_sheet_gk=2, clean_sheet_def=1, penalty=0.5
+  const EVENT_PTS_KO: Record<string, number> = {
+    goal: 1, goal_extra_time: 1, penalty_shootout: 0.5,
+    assist: 0.5, clean_sheet_gk: 2, clean_sheet_def: 1,
+    penalty_missed: -0.5, penalty_missed_shootout: -0.25,
+    own_goal: -1, red_card: -1,
+  }
+  // Group stage: no assists or clean sheets
+  const EVENT_PTS_GROUP: Record<string, number> = {
+    goal: 1, goal_extra_time: 1, penalty_shootout: 0.5,
+    penalty_missed_shootout: -0.25, own_goal: -1, red_card: -1,
+  }
+  function eventPts(eventType: string, matchType: string): number {
+    if (matchType === 'group') return EVENT_PTS_GROUP[eventType] ?? 0
+    return EVENT_PTS_KO[eventType] ?? 0
+  }
+
+  return players.map(player => {
+    const pid = player.id
+    const myLog = (scorelog ?? []).filter(s => s.player_id === pid)
+    const myDrafted = (drafted ?? []).filter(d => d.player_id === pid)
+    const myTeamIds = myDrafted.map(d => d.team_id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const myPreds = (preds ?? []).filter((p: any) => p.player_id === pid && p.matches?.status === 'finished')
+
+    // ── Prediction breakdown (for bar chart, exactas, porra favorita)
+    let exact = 0, correctResult = 0, wrong = 0
+    const predCounts: Record<string, number> = {}
+    for (const p of myPreds) {
+      const key = `${p.home_goals}-${p.away_goals}`
+      predCounts[key] = (predCounts[key] ?? 0) + 1
+      const m = p.matches
+      if (p.home_goals === m.home_goals && p.away_goals === m.away_goals) {
+        exact++
+      } else {
+        const predSign = Math.sign(p.home_goals - p.away_goals)
+        const realSign = Math.sign(m.home_goals - m.away_goals)
+        if (predSign === realSign) correctResult++
+        else wrong++
+      }
+    }
+    const favEntry = Object.entries(predCounts).sort((a, b) => b[1] - a[1])[0]
+
+    // ── Partidos ganados: Victoria (result=2) + wildcard_qualifier
+    const winsCount = myLog.filter(s =>
+      (s.category === 'result' && s.points === 2) || s.category === 'wildcard_qualifier'
+    ).length
+
+    // ── Racha de victorias: consecutive won matches in chronological order
+    const winMatchIds = new Set(myLog.filter(s => s.category === 'result' && s.points === 2).map(s => s.match_id))
+    const wildWinMatchIds = new Set(myLog.filter(s => s.category === 'wildcard_qualifier').map(s => s.match_id))
+    const involvedMatchIds = [...new Set(
+      myLog.filter(s => s.category === 'result' || s.category === 'wildcard_qualifier').map(s => s.match_id)
+    )].filter(mid => mid && matchMap[mid])
+      .sort((a, b) => new Date(matchMap[a].match_date).getTime() - new Date(matchMap[b].match_date).getTime())
+    let streakBest = 0, cur = 0
+    for (const mid of involvedMatchIds) {
+      if (winMatchIds.has(mid) || wildWinMatchIds.has(mid)) { cur++; streakBest = Math.max(streakBest, cur) }
+      else cur = 0
+    }
+
+    // ── Best/worst match: sum ALL score_log categories
+    const byMatch: Record<string, number> = {}
+    for (const s of myLog) {
+      if (s.match_id) byMatch[s.match_id] = (byMatch[s.match_id] ?? 0) + s.points
+    }
+    const matchEntries = Object.entries(byMatch).sort((a, b) => b[1] - a[1])
+    const bestEntry = matchEntries[0]
+    const worstEntry = matchEntries[matchEntries.length - 1]
+
+    function matchLabel(mid: string) {
+      const m = matchMap[mid]
+      if (!m) return '?'
+      const h = m.home_team as { name: string; flag_emoji?: string } | null
+      const a = m.away_team as { name: string; flag_emoji?: string } | null
+      return `${h?.flag_emoji ?? ''} ${h?.name ?? '?'} vs ${a?.flag_emoji ?? ''} ${a?.name ?? '?'}`
+    }
+
+    // ── Equipo más valioso: sum ALL score_log categories per team
+    const teamPts: Record<string, number> = {}
+    for (const s of myLog) {
+      if (!s.match_id) continue
+      const m = matchMap[s.match_id]
+      if (!m) continue
+      const tid = myTeamIds.find(t => t === m.home_team_id || t === m.away_team_id)
+      if (tid) teamPts[tid] = (teamPts[tid] ?? 0) + s.points
+    }
+    const bestTeamEntry = Object.entries(teamPts).sort((a, b) => b[1] - a[1])[0]
+    const bestTeamData = myDrafted.find(d => d.team_id === bestTeamEntry?.[0])?.team as { name: string } | null
+
+    // ── Jugador estrella: correct event pts based on match_type (group vs KO)
+    const playerPtsMap: Record<string, { pts: number; name: string; photo: string | null }> = {}
+    for (const ev of (events ?? [])) {
+      const sp = ev.squad_player as { id: string; name: string; team_id: string; photo_url?: string } | null
+      if (!sp || !myTeamIds.includes(sp.team_id)) continue
+      const match = matchMap[ev.match_id]
+      if (!match) continue
+      const pts = eventPts(ev.event_type, match.match_type ?? 'group')
+      if (pts === 0) continue
+      if (!playerPtsMap[sp.id]) playerPtsMap[sp.id] = { pts: 0, name: sp.name, photo: sp.photo_url ?? null }
+      playerPtsMap[sp.id].pts += pts
+    }
+    const topP = Object.values(playerPtsMap).sort((a, b) => b.pts - a.pts)[0]
+
+    const totalPts = scores.find(s => s.player_id === pid)?.points ?? 0
+    const rank = sortedScores.findIndex(s => s.player_id === pid) + 1
+
+    return {
+      playerId: pid, playerName: player.name,
+      totalPreds: myPreds.length, exact, correctResult, wrong,
+      favPred: favEntry?.[0] ?? null, favPredCount: favEntry?.[1] ?? 0,
+      bestMatchLabel: bestEntry ? matchLabel(bestEntry[0]) : '—',
+      bestMatchPts: bestEntry?.[1] ?? 0,
+      worstMatchLabel: worstEntry ? matchLabel(worstEntry[0]) : '—',
+      worstMatchPts: worstEntry?.[1] ?? 0,
+      bestTeamName: bestTeamData?.name ?? null, bestTeamPts: bestTeamEntry?.[1] ?? 0,
+      topPlayerName: topP?.name ?? null, topPlayerPts: topP?.pts ?? 0, topPlayerPhoto: topP?.photo ?? null,
+      streakBest, winsCount, totalPts, rank,
+    }
+  })
+}
+
+function StatsTab({ leagueId, players, myId, scores, onOpenWrapped }: { leagueId: string; players: Player[]; myId: string | null; scores: Score[]; onOpenWrapped: () => void }) {
+  const [stats, setStats] = useState<PlayerStats[] | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadAllStats(leagueId, players, scores).then(result => {
+      setStats(result)
+      setSelected(myId ?? result[0]?.playerId ?? null)
+      setLoading(false)
+    })
+  }, [leagueId, players, myId, scores])
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-[var(--text-secondary)]">
+      <span className="text-2xl mr-3 animate-bounce">⏳</span> Cargando estadísticas…
+    </div>
+  )
+  if (!stats) return null
+
+  const s = stats.find(x => x.playerId === selected) ?? stats[0]
+  if (!s) return null
+
+  const accuracy = s.totalPreds > 0 ? Math.round(((s.exact + s.correctResult) / s.totalPreds) * 100) : 0
+  const mostExact    = [...stats].sort((a, b) => b.exact - a.exact)[0]
+  const bestStreak   = [...stats].sort((a, b) => b.streakBest - a.streakBest)[0]
+  const mostPreds    = [...stats].sort((a, b) => b.totalPreds - a.totalPreds)[0]
+  const bestAccuracy = [...stats].sort((a, b) => {
+    const ra = a.totalPreds > 0 ? (a.exact + a.correctResult) / a.totalPreds : 0
+    const rb = b.totalPreds > 0 ? (b.exact + b.correctResult) / b.totalPreds : 0
+    return rb - ra
+  })[0]
+
+  function StatCard({ icon, label, value, sub }: { icon: string; label: string; value: string; sub?: string }) {
+    return (
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4 flex flex-col gap-1">
+        <span className="text-xl">{icon}</span>
+        <p className="text-xs text-[var(--text-secondary)] font-medium uppercase tracking-wider">{label}</p>
+        <p className="text-base font-black leading-tight">{value}</p>
+        {sub && <p className="text-xs text-[var(--text-secondary)]">{sub}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {myId && (
+        <button
+          onClick={onOpenWrapped}
+          className="w-full bg-gradient-to-r from-[#7B2D8B] to-[#E8365D] text-white rounded-2xl px-5 py-4 flex items-center justify-between font-black text-base shadow-lg hover:opacity-90 transition-opacity">
+          <span className="flex items-center gap-3">
+            <span className="text-2xl">🎁</span>
+            <span>Ver tu Wrapped 2026</span>
+          </span>
+          <span className="text-white/70 text-sm font-medium">Tu resumen →</span>
+        </button>
+      )}
+      <div className="flex gap-2 flex-wrap">
+        {stats.map(st => (
+          <button key={st.playerId} onClick={() => setSelected(st.playerId)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors border ${
+              selected === st.playerId
+                ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                : 'bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-secondary)] hover:text-white'
+            }`}>
+            {st.playerName}
+          </button>
+        ))}
+      </div>
+
+      <div>
+        <h2 className="text-lg font-black mb-3">📊 {s.playerName}</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard icon="🏆" label="Partidos ganados" value={`${s.winsCount}`} sub="Victorias + wildcards acertados" />
+          <StatCard icon="🔮" label="Resultado exacto" value={`${s.exact} porras`} sub={s.totalPreds > 0 ? `${Math.round((s.exact / s.totalPreds) * 100)}% del total` : ''} />
+          <StatCard icon="🔁" label="Porra favorita" value={s.favPred ?? '—'} sub={s.favPredCount > 1 ? `Jugada ${s.favPredCount} veces` : 'Solo una vez'} />
+          <StatCard icon="🔥" label="Racha de victorias" value={`${s.streakBest} seguidos`} sub="Máxima racha consecutiva" />
+          <StatCard icon="⭐" label="Mejor partido" value={`+${fmtPts(s.bestMatchPts)} pts`} sub={s.bestMatchLabel} />
+          <StatCard icon="💀" label="Peor partido" value={`${fmtPts(s.worstMatchPts)} pts`} sub={s.worstMatchLabel} />
+          <StatCard icon="🏅" label="Equipo más valioso" value={s.bestTeamName ?? '—'} sub={s.bestTeamPts > 0 ? `${fmtPts(s.bestTeamPts)} pts acumulados` : ''} />
+          {s.topPlayerName && (
+            <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                {s.topPlayerPhoto
+                  ? <img src={s.topPlayerPhoto} alt={s.topPlayerName} className="w-8 h-8 rounded-full object-cover" onError={e => { (e.target as HTMLImageElement).src = DEFAULT_PLAYER_IMG }} />
+                  : <span className="text-xl">🌟</span>}
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium uppercase tracking-wider">Jugador estrella</p>
+                  <p className="text-base font-black leading-tight">{s.topPlayerName}</p>
+                  <p className="text-xs text-[var(--text-secondary)]">{fmtPts(s.topPlayerPts)} pts en eventos</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-4">
+        <p className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3">Desglose de porras</p>
+        <div className="flex rounded-full overflow-hidden h-4 mb-2">
+          {s.totalPreds > 0 && <>
+            <div className="bg-emerald-500" style={{ width: `${(s.exact / s.totalPreds) * 100}%` }} />
+            <div className="bg-yellow-400" style={{ width: `${(s.correctResult / s.totalPreds) * 100}%` }} />
+            <div className="bg-[var(--border)]" style={{ width: `${(s.wrong / s.totalPreds) * 100}%` }} />
+          </>}
+        </div>
+        <div className="flex gap-4 text-xs text-[var(--text-secondary)]">
+          <span><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1" />Exactas {s.exact}</span>
+          <span><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 mr-1" />Resultado {s.correctResult}</span>
+          <span><span className="inline-block w-2 h-2 rounded-full bg-[var(--border)] mr-1" />Falladas {s.wrong}</span>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-black mb-3">🏆 Records de la liga</h2>
+        <div className="flex flex-col gap-2">
+          {[
+            { icon: '🎯', label: 'Más aciertos exactos', name: mostExact.playerName, value: `${mostExact.exact} exactas` },
+            { icon: '🔥', label: 'Mayor racha', name: bestStreak.playerName, value: `${bestStreak.streakBest} seguidos` },
+            { icon: '📈', label: 'Mejor % de acierto', name: bestAccuracy.playerName, value: `${Math.round(((bestAccuracy.exact + bestAccuracy.correctResult) / Math.max(1, bestAccuracy.totalPreds)) * 100)}%` },
+            { icon: '📋', label: 'Más partidos jugados', name: mostPreds.playerName, value: `${mostPreds.totalPreds} porras` },
+          ].map(r => (
+            <div key={r.label} className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">{r.icon}</span>
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)]">{r.label}</p>
+                  <p className="font-bold text-sm">{r.name}</p>
+                </div>
+              </div>
+              <span className="text-sm font-black text-[var(--accent)]">{r.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-black mb-3">📋 Comparativa</h2>
+        <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-xs text-[var(--text-secondary)]">
+                <th className="text-left px-4 py-2">Jugador</th>
+                <th className="text-center px-2 py-2">Exactas</th>
+                <th className="text-center px-2 py-2">%</th>
+                <th className="text-center px-2 py-2">Racha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...stats].sort((a, b) => b.exact - a.exact).map(st => {
+                const acc = st.totalPreds > 0 ? Math.round(((st.exact + st.correctResult) / st.totalPreds) * 100) : 0
+                return (
+                  <tr key={st.playerId} onClick={() => setSelected(st.playerId)}
+                    className={`border-b border-[var(--border)] last:border-0 cursor-pointer transition-colors ${selected === st.playerId ? 'bg-[var(--accent)]/10' : 'hover:bg-[var(--border)]/30'}`}>
+                    <td className="px-4 py-2 font-semibold">{st.playerName}</td>
+                    <td className="text-center px-2 py-2 tabular-nums">{st.exact}</td>
+                    <td className="text-center px-2 py-2 tabular-nums">{acc}%</td>
+                    <td className="text-center px-2 py-2 tabular-nums">{st.streakBest}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── WRAPPED MODAL ────────────────────────────────────────────
+
+const WRAPPED_GRADIENTS = [
+  'from-[#1DB954] to-[#0a2e14]',
+  'from-[#7B2D8B] to-[#1a0a2e]',
+  'from-[#E8365D] to-[#2d0a15]',
+  'from-[#F59E0B] to-[#1c1000]',
+  'from-[#3B82F6] to-[#0a1a3d]',
+  'from-[#10B981] to-[#002d1a]',
+  'from-[#8B5CF6] to-[#1a0a3d]',
+  'from-[#EC4899] to-[#2d0a1a]',
+  'from-[#14B8A6] to-[#001a19]',
+  'from-[#F97316] to-[#2d0900]',
+  'from-[#6366F1] to-[#0a0a2d]',
+  'from-[#EF4444] to-[#1a0000]',
+]
+
+function rankLabel(rank: number, total: number): string {
+  if (rank === 1) return '1º. Sin discusión.'
+  if (rank === 2) return '2º. Casi, casi.'
+  if (rank === total) return `${rank}º y último.`
+  return `${rank}º de ${total}`
+}
+
+function WrappedModal({ leagueId, players, myId, scores, onClose }: {
+  leagueId: string; players: Player[]; myId: string; scores: Score[]; onClose: () => void
+}) {
+  const [stats, setStats] = useState<PlayerStats | null>(null)
+  const [allStats, setAllStats] = useState<PlayerStats[]>([])
+  const [slide, setSlide] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    loadAllStats(leagueId, players, scores).then(result => {
+      setAllStats(result)
+      const me = result.find(s => s.playerId === myId) ?? result[0]
+      setStats(me)
+      setLoading(false)
+      setTimeout(() => setVisible(true), 30)
+    })
+  }, [leagueId, players, myId, scores])
+
+  const slides = stats ? buildSlides(stats, allStats) : []
+
+  const goTo = (idx: number) => {
+    if (idx < 0 || idx >= slides.length) { onClose(); return }
+    setVisible(false)
+    setTimeout(() => { setSlide(idx); setVisible(true) }, 200)
+  }
+
+  const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const { clientX, currentTarget } = e
+    const mid = currentTarget.getBoundingClientRect().width / 2
+    goTo(clientX > mid ? slide + 1 : slide - 1)
+  }
+
+  if (loading) return (
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+      <div className="text-white text-center">
+        <div className="text-5xl mb-4 animate-bounce">🎁</div>
+        <p className="text-xl font-black">Preparando tu Wrapped…</p>
+      </div>
+    </div>
+  )
+  if (!stats || slides.length === 0) return null
+
+  const current = slides[slide]
+  const grad = WRAPPED_GRADIENTS[slide % WRAPPED_GRADIENTS.length]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm">
+      <div
+        className={`relative w-full max-w-sm h-[93dvh] bg-gradient-to-b ${grad} rounded-t-3xl overflow-hidden flex flex-col select-none`}
+        onClick={handleTap}
+      >
+        {/* Progress bar */}
+        <div className="flex gap-1 px-4 pt-5 pb-0 shrink-0 z-10">
+          {slides.map((_, i) => (
+            <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-white/20">
+              <div className={`h-full rounded-full transition-all duration-300 ${i < slide ? 'bg-white' : i === slide ? 'bg-white w-full' : 'bg-transparent w-0'}`} />
+            </div>
+          ))}
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-3 pb-0 shrink-0 z-10">
+          <p className="text-white/60 text-xs font-bold uppercase tracking-widest">Tu Wrapped 2026</p>
+          <button
+            onClick={e => { e.stopPropagation(); onClose() }}
+            className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white text-sm">
+            ✕
+          </button>
+        </div>
+
+        {/* Slide content */}
+        <div className={`flex-1 flex flex-col items-center justify-center px-8 text-center gap-5 transition-all duration-200 ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+          <div className="text-[80px] leading-none drop-shadow-2xl">{current.emoji}</div>
+          {current.context && (
+            <p className="text-white/50 text-xs uppercase tracking-[0.2em] font-semibold">{current.context}</p>
+          )}
+          <div className="flex flex-col items-center gap-2">
+            {current.pre && <p className="text-white/70 text-lg leading-snug">{current.pre}</p>}
+            <p className="text-white font-black leading-tight drop-shadow-lg" style={{ fontSize: 'clamp(1.8rem, 9vw, 3rem)' }}>
+              {current.stat}
+            </p>
+            {current.post && <p className="text-white/70 text-base leading-snug">{current.post}</p>}
+          </div>
+          {current.sub && (
+            <p className="text-white/40 text-sm leading-relaxed max-w-[260px]">{current.sub}</p>
+          )}
+        </div>
+
+        {/* Tap hint + counter */}
+        <div className="flex items-center justify-between px-6 pb-8 shrink-0">
+          <p className="text-white/20 text-xs">← toca los lados para navegar →</p>
+          <p className="text-white/30 text-xs tabular-nums">{slide + 1}/{slides.length}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface WrappedSlide {
+  emoji: string
+  context?: string
+  pre?: string
+  stat: string
+  post?: string
+  sub?: string
+}
+
+function buildSlides(s: PlayerStats, all: PlayerStats[]): WrappedSlide[] {
+  const accuracy  = s.totalPreds > 0 ? Math.round(((s.exact + s.correctResult) / s.totalPreds) * 100) : 0
+  const exactPct  = s.totalPreds > 0 ? Math.round((s.exact / s.totalPreds) * 100) : 0
+  const sorted    = [...all].sort((a, b) => b.totalPts - a.totalPts)
+  const champion  = sorted[0]
+  const topExact  = [...all].sort((a, b) => b.exact - a.exact)[0]
+  const topStreak = [...all].sort((a, b) => b.streakBest - a.streakBest)[0]
+  const isBestExact  = topExact.playerId === s.playerId
+  const isBestStreak = topStreak.playerId === s.playerId
+  const isChampion   = champion.playerId === s.playerId
+
+  const slides: WrappedSlide[] = [
+    {
+      emoji: '🌍',
+      context: 'Fantasy Mundial 2026',
+      pre: `${s.playerName},`,
+      stat: 'Este fue tu Mundial.',
+      sub: 'Toca para descubrir tu resumen del torneo.',
+    },
+    {
+      emoji: '📋',
+      context: 'Participación',
+      pre: 'Jugaste tu porra en',
+      stat: `${s.totalPreds} partidos`,
+      sub: s.totalPreds >= 60 ? '¡Sin fallar ni uno! Eso es dedicación.' : s.totalPreds >= 48 ? 'Muy constante. Estuviste en casi todo.' : `Te perdiste algunos. Tampoco pasa nada.`,
+    },
+    {
+      emoji: '🎯',
+      context: 'Acierto',
+      pre: 'Acertaste el resultado en',
+      stat: `${s.exact + s.correctResult} de ${s.totalPreds}`,
+      post: `un ${accuracy}% de éxito`,
+      sub: accuracy >= 60 ? 'Eso te pone entre los mejores predictores.' : accuracy >= 45 ? 'Cerca de la media. Digno.' : 'Hay margen de mejora. Mucho margen.',
+    },
+    {
+      emoji: '🔮',
+      context: 'Resultado exacto',
+      pre: 'Adivinaste el marcador exacto',
+      stat: `${s.exact} ${s.exact === 1 ? 'vez' : 'veces'}`,
+      post: `el ${exactPct}% de tus partidos`,
+      sub: isBestExact
+        ? '¡El más afinado de la liga! Ojo clínico de primer nivel.'
+        : `${topExact.playerName} fue quien más acertó, con ${topExact.exact} exactas.`,
+    },
+    {
+      emoji: '🔁',
+      context: 'Tu porra favorita',
+      pre: 'La apostaste',
+      stat: s.favPred ? `el ${s.favPred}` : '—',
+      post: s.favPredCount > 1 ? `${s.favPredCount} veces seguidas` : 'solo una vez',
+      sub: s.favPredCount >= 8 ? '¿Trampa mental o convicción total?' : s.favPredCount >= 5 ? 'Claramente tu resultado de cabecera.' : 'Variado el repertorio.',
+    },
+    {
+      emoji: '🔥',
+      context: 'Racha de victorias',
+      pre: 'Tu mejor racha fue de',
+      stat: `${s.streakBest} victorias seguidas`,
+      sub: isBestStreak
+        ? '¡La mejor racha de toda la liga! Un auténtico ganador.'
+        : `La racha más larga del grupo fue de ${topStreak.playerName} con ${topStreak.streakBest} victorias consecutivas.`,
+    },
+    {
+      emoji: '⭐',
+      context: 'Tu mejor noche',
+      pre: 'Rascaste',
+      stat: `+${fmtPts(s.bestMatchPts)} pts`,
+      post: s.bestMatchLabel,
+      sub: 'Todo salió redondo ese día. Porra, jugadores, resultado... perfecto.',
+    },
+    {
+      emoji: '💀',
+      context: 'Tu peor pesadilla',
+      stat: s.worstMatchLabel,
+      post: `solo ${fmtPts(s.worstMatchPts)} pts`,
+      sub: 'No fue tu día. Hay que saberlo aceptar y pasar página.',
+    },
+    ...(s.bestTeamName ? [{
+      emoji: '🏅',
+      context: 'Tu equipo fetiche',
+      pre: 'Tu mina de oro fue',
+      stat: s.bestTeamName,
+      post: `${fmtPts(s.bestTeamPts)} pts acumulados`,
+      sub: 'Buen draft. Ojo clínico.',
+    } as WrappedSlide] : []),
+    ...(s.topPlayerName ? [{
+      emoji: '🌟',
+      context: 'Tu jugador estrella',
+      pre: 'El jugador que más te aportó fue',
+      stat: s.topPlayerName,
+      post: `${fmtPts(s.topPlayerPts)} pts en eventos`,
+      sub: 'Goles, asistencias, porterías a cero... Qué temporada.',
+    } as WrappedSlide] : []),
+    {
+      emoji: isChampion ? '👑' : s.rank === all.length ? '🫠' : '🏆',
+      context: 'Clasificación final',
+      pre: 'Terminaste',
+      stat: rankLabel(s.rank, all.length),
+      post: `con ${fmtPts(s.totalPts)} puntos`,
+      sub: isChampion
+        ? '¡Campeón de la liga! El mejor del grupo sin duda.'
+        : `La campeona fue ${champion.playerName} con ${fmtPts(champion.totalPts)} pts. El año que viene será tuyo.`,
+    },
+    {
+      emoji: '🎁',
+      context: 'Fantasy Mundial 2026',
+      pre: 'Gracias por jugar,',
+      stat: s.playerName + '.',
+      sub: `${s.totalPreds} porras · ${s.exact} exactas · ${s.streakBest} racha máx · ${fmtPts(s.totalPts)} pts`,
+    },
+  ]
+
+  return slides
+}

@@ -328,20 +328,32 @@ async function syncESPNEvents(
 
   function resolvePlayer(name: string, teamId: string) {
     const norm = normalize(name)
+    const normParts = norm.split(' ')
+    const normLastName = normParts.at(-1)!
+    // If ESPN sends "X. Apellido" format, extract initial for disambiguation
+    const normInitial = normParts.length >= 2 && normParts[0].length === 1 ? normParts[0] : null
+
+    function matchScore(n: string): number {
+      const parts = n.split(' ')
+      if (n === norm) return 4
+      if (n.includes(norm) || norm.includes(n)) return 3
+      // Initial + last name match: "e martinez" matches "emiliano martinez" → score 2
+      if (normInitial && parts.at(-1) === normLastName && parts[0].startsWith(normInitial)) return 2
+      if (parts.at(-1) === normLastName) return 1
+      return 0
+    }
+
     const teamSquad = squad.filter(p => p.team_id === teamId)
-    // Intentamos primero en el equipo correcto para evitar falsos positivos por apellido compartido
-    const inTeam = teamSquad.find(p => {
-      const n = normalize(p.name)
-      return n === norm || n.includes(norm) || norm.includes(n) ||
-        n.split(' ').at(-1) === norm.split(' ').at(-1)
-    })
+    const inTeam = teamSquad
+      .map(p => ({ p, score: matchScore(normalize(p.name)) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)[0]?.p
     if (inTeam) return inTeam
     // Fallback: buscar en ambos equipos (ej: autogol donde el jugador es del equipo contrario)
-    return squad.find(p => {
-      const n = normalize(p.name)
-      return n === norm || n.includes(norm) || norm.includes(n) ||
-        n.split(' ').at(-1) === norm.split(' ').at(-1)
-    })
+    return squad
+      .map(p => ({ p, score: matchScore(normalize(p.name)) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)[0]?.p
   }
 
   function espnTeamToOurId(espnTeamId: string): string {
@@ -436,25 +448,47 @@ async function syncCleanSheets(
   await supabaseAdmin.from('player_events').delete()
     .eq('match_id', matchId).in('event_type', ['clean_sheet_gk', 'clean_sheet_def'])
 
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+
   const toInsert: any[] = []
   for (const team of summData.rosters ?? []) {
+    const isHome = team.team?.id === espnHomeId
+    const conceded = isHome ? awayScored90 : homeScored90
+    if (conceded > 0) continue // este equipo encajó, sin portería a cero
+
     for (const p of team.roster ?? []) {
-      const isGk = p.position?.abbreviation === 'GK' || p.position?.abbreviation === 'G' || p.position?.name === 'Goalkeeper'
+      const abbr = p.position?.abbreviation ?? ''
+      const posName = p.position?.name ?? ''
+      const isGk = abbr === 'GK' || abbr === 'G' || posName === 'Goalkeeper'
+      const isDef = abbr === 'DF' || abbr === 'D' || abbr === 'CB' || abbr === 'LB' || abbr === 'RB' || abbr === 'LWB' || abbr === 'RWB'
+      if (!isGk && !isDef) continue
+
       const minutes = p.stats?.find((s: any) => s.name === 'minutesPlayed')?.value ?? null
-      const played = minutes !== null ? minutes > 60 : p.starter === true
-      if (!isGk || !played) continue
-      const isHome = team.team?.id === espnHomeId
-      const conceded = isHome ? awayScored90 : homeScored90
-      if (conceded > 0) continue
-      const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+      const played = minutes !== null ? minutes > 45 : p.starter === true
+      if (!played) continue
+
       const name = p.athlete?.displayName ?? ''
       const normName = norm(name)
-      const sp = squad.find(sq => {
-        const n = norm(sq.name)
-        return n === normName || n.includes(normName) || normName.includes(n) ||
-          n.split(' ').at(-1) === normName.split(' ').at(-1)
-      })
-      if (sp) toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: 'clean_sheet_gk', minute: null, notified: true })
+      const nmParts = normName.split(' ')
+      const nmLast = nmParts.at(-1)!
+      const nmInitial = nmParts.length >= 2 && nmParts[0].length === 1 ? nmParts[0] : null
+      const sp = squad
+        .map(sq => {
+          const n = norm(sq.name)
+          const parts = n.split(' ')
+          let s = 0
+          if (n === normName) s = 4
+          else if (n.includes(normName) || normName.includes(n)) s = 3
+          else if (nmInitial && parts.at(-1) === nmLast && parts[0].startsWith(nmInitial)) s = 2
+          else if (parts.at(-1) === nmLast) s = 1
+          return { sq, s }
+        })
+        .filter(x => x.s > 0)
+        .sort((a, b) => b.s - a.s)[0]?.sq
+      if (!sp) continue
+
+      const eventType = isGk ? 'clean_sheet_gk' : 'clean_sheet_def'
+      toInsert.push({ match_id: matchId, squad_player_id: sp.id, event_type: eventType, minute: null, notified: true })
     }
   }
   if (toInsert.length > 0) await supabaseAdmin.from('player_events').insert(toInsert)
@@ -462,11 +496,21 @@ async function syncCleanSheets(
 
 function resolvePlayerFromSquad(name: string, squad: { id: string; name: string; team_id: string }[]) {
   const norm = normalize(name)
-  return squad.find(sq => {
-    const n = normalize(sq.name)
-    return n === norm || n.includes(norm) || norm.includes(n) ||
-      n.split(' ').at(-1) === norm.split(' ').at(-1)
-  })
+  const normParts = norm.split(' ')
+  const normLastName = normParts.at(-1)!
+  const normInitial = normParts.length >= 2 && normParts[0].length === 1 ? normParts[0] : null
+  function score(n: string): number {
+    const parts = n.split(' ')
+    if (n === norm) return 4
+    if (n.includes(norm) || norm.includes(n)) return 3
+    if (normInitial && parts.at(-1) === normLastName && parts[0].startsWith(normInitial)) return 2
+    if (parts.at(-1) === normLastName) return 1
+    return 0
+  }
+  return squad
+    .map(sq => ({ sq, s: score(normalize(sq.name)) }))
+    .filter(x => x.s > 0)
+    .sort((a, b) => b.s - a.s)[0]?.sq
 }
 
 // Returns { count, winnerEspnId } — winnerEspnId is set when match went to shootout
