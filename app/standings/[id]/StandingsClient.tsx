@@ -3830,6 +3830,7 @@ async function loadAllStats(leagueId: string, players: Player[], scores: Score[]
     { data: matches },
     { data: drafted },
     { data: events },
+    { data: wcLineups },
   ] = await Promise.all([
     supabase.from('score_log').select('*').eq('league_id', leagueId),
     supabase.from('predictions').select('*,matches!inner(id,home_goals,away_goals,home_team_id,away_team_id,status,match_type)'),
@@ -3838,6 +3839,7 @@ async function loadAllStats(leagueId: string, players: Player[], scores: Score[]
       .or(`league_id.is.null,league_id.eq.${leagueId}`).order('match_date'),
     supabase.from('drafted_teams').select('*,team:teams(id,name,flag_emoji)').eq('league_id', leagueId),
     supabase.from('player_events').select('*,squad_player:squad_players(id,name,team_id,position,photo_url)'),
+    supabase.from('match_lineups').select('player_id,squad_player_id,match_id').eq('is_wildcard', true).in('player_id', players.map(p => p.id)),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3897,7 +3899,7 @@ async function loadAllStats(leagueId: string, players: Player[], scores: Score[]
     const winMatchIds = new Set(myLog.filter(s => s.category === 'result' && s.points === 2).map(s => s.match_id))
     const wildWinMatchIds = new Set(myLog.filter(s => s.category === 'wildcard_qualifier').map(s => s.match_id))
     const involvedMatchIds = [...new Set(
-      myLog.filter(s => s.category === 'result' || s.category === 'wildcard_qualifier').map(s => s.match_id)
+      myLog.filter(s => ['result', 'wildcard_qualifier', 'wildcard_entry'].includes(s.category)).map(s => s.match_id)
     )].filter(mid => mid && matchMap[mid])
       .sort((a, b) => new Date(matchMap[a].match_date).getTime() - new Date(matchMap[b].match_date).getTime())
     let streakBest = 0, cur = 0
@@ -3936,10 +3938,17 @@ async function loadAllStats(leagueId: string, players: Player[], scores: Score[]
     const bestTeamData = myDrafted.find(d => d.team_id === bestTeamEntry?.[0])?.team as { name: string } | null
 
     // ── Jugador estrella: correct event pts based on match_type (group vs KO)
+    // Build set of wildcard squad_players for this fantasy player: "spId|matchId"
+    const wcSet = new Set(
+      (wcLineups ?? []).filter(l => l.player_id === pid).map(l => `${l.squad_player_id}|${l.match_id}`)
+    )
     const playerPtsMap: Record<string, { pts: number; name: string; photo: string | null }> = {}
     for (const ev of (events ?? [])) {
       const sp = ev.squad_player as { id: string; name: string; team_id: string; photo_url?: string } | null
-      if (!sp || !myTeamIds.includes(sp.team_id)) continue
+      if (!sp) continue
+      const isOwned = myTeamIds.includes(sp.team_id)
+      const isWildcard = wcSet.has(`${sp.id}|${ev.match_id}`)
+      if (!isOwned && !isWildcard) continue
       const match = matchMap[ev.match_id]
       if (!match) continue
       const pts = eventPts(ev.event_type, match.match_type ?? 'group')
