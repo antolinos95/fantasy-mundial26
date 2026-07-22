@@ -4120,19 +4120,17 @@ function StatsTab({ leagueId, players, myId, scores, onOpenWrapped }: { leagueId
               <tr className="border-b border-[var(--border)] text-xs text-[var(--text-secondary)]">
                 <th className="text-left px-4 py-2">Jugador</th>
                 <th className="text-center px-2 py-2">Exactas</th>
-                <th className="text-center px-2 py-2">%</th>
+                <th className="text-center px-2 py-2">Aciertos</th>
                 <th className="text-center px-2 py-2">Racha</th>
               </tr>
             </thead>
             <tbody>
-              {[...stats].sort((a, b) => b.exact - a.exact).map(st => {
-                const acc = st.totalPreds > 0 ? Math.round(((st.exact + st.correctResult) / st.totalPreds) * 100) : 0
-                return (
+              {[...stats].sort((a, b) => b.exact - a.exact).map(st => (
                   <tr key={st.playerId} onClick={() => setSelected(st.playerId)}
                     className={`border-b border-[var(--border)] last:border-0 cursor-pointer transition-colors ${selected === st.playerId ? 'bg-[var(--accent)]/10' : 'hover:bg-[var(--border)]/30'}`}>
                     <td className="px-4 py-2 font-semibold">{st.playerName}</td>
                     <td className="text-center px-2 py-2 tabular-nums">{st.exact}</td>
-                    <td className="text-center px-2 py-2 tabular-nums">{acc}%</td>
+                    <td className="text-center px-2 py-2 tabular-nums">{st.exact + st.correctResult}</td>
                     <td className="text-center px-2 py-2 tabular-nums">{st.streakBest}</td>
                   </tr>
                 )
